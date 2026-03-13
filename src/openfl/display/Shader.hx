@@ -232,6 +232,9 @@ class Shader
 	@:noCompletion private var __textureCoord:ShaderParameter<Float>;
 	@:noCompletion private var __texture:ShaderInput<BitmapData>;
 	@:noCompletion private var __textureSize:ShaderParameter<Float>;
+	@:noCompletion private var __vertexColor:ShaderParameter<Float>;
+	@:noCompletion private var __focalPointRatio:ShaderParameter<Float>;
+	@:noCompletion private var __fillType:ShaderParameter<Int>;
 
 	#if openfljs
 	@:noCompletion private static function __init__()
@@ -689,6 +692,12 @@ class Shader
 						parameter.__isUniform = isUniform;
 						parameter.__length = length;
 						__paramInt.push(parameter);
+
+						if (name == "openfl_FillType")
+						{
+							__fillType = parameter;
+						}
+
 						Reflect.setField(__data, name, parameter);
 						if (__isGenerated) Reflect.setField(this, name, parameter);
 
@@ -716,6 +725,8 @@ class Shader
 								case "openfl_Position": __position = parameter;
 								case "openfl_TextureCoord": __textureCoord = parameter;
 								case "openfl_TextureSize": __textureSize = parameter;
+								case "openfl_VertexColor": __vertexColor = parameter;
+								case "openfl_FocalPointRatio": __focalPointRatio = parameter;
 								default:
 							}
 						}

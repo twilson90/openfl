@@ -313,6 +313,7 @@ class Video extends DisplayObject
 			__indexBufferData[5] = 3;
 
 			__indexBufferContext = context.__context;
+			if (__indexBuffer != null) __indexBuffer.dispose();
 			__indexBuffer = context.createIndexBuffer(6);
 			__indexBuffer.uploadFromTypedArray(__indexBufferData);
 		}
@@ -394,6 +395,7 @@ class Video extends DisplayObject
 			__vertexBufferData[VERTEX_BUFFER_STRIDE * 2 + 3] = uvWidth;
 
 			__vertexBufferContext = context.__context;
+			if (__vertexBuffer != null) __vertexBuffer.dispose();
 			__vertexBuffer = context.createVertexBuffer(3, VERTEX_BUFFER_STRIDE);
 			__vertexBuffer.uploadFromTypedArray(__vertexBufferData);
 		}

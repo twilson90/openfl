@@ -12,6 +12,7 @@ import openfl.display._internal.Context3DTextField;
 import openfl.display._internal.Context3DTilemap;
 import openfl.display._internal.Context3DVideo;
 import openfl.display._internal.ShaderBuffer;
+import openfl.display._internal.Gradient;
 import openfl.utils.ObjectPool;
 import openfl.display3D.Context3DClearMask;
 import openfl.display3D.Context3D;
@@ -57,12 +58,12 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private static var __alphaValue:Array<Float> = [1];
 	@:noCompletion private static var __colorMultipliersValue:Array<Float> = [0, 0, 0, 0];
 	@:noCompletion private static var __colorOffsetsValue:Array<Float> = [0, 0, 0, 0];
-	@:noCompletion private static var __defaultColorMultipliersValue:Array<Float> = [1, 1, 1, 1];
 	@:noCompletion private static var __emptyColorValue:Array<Float> = [0, 0, 0, 0];
-	@:noCompletion private static var __emptyAlphaValue:Array<Float> = [1];
 	@:noCompletion private static var __hasColorTransformValue:Array<Bool> = [false];
 	@:noCompletion private static var __scissorRectangle:Rectangle = new Rectangle();
 	@:noCompletion private static var __textureSizeValue:Array<Float> = [0, 0];
+	@:noCompletion private static var __fillTypeValue:Array<Int> = [0];
+	@:noCompletion private static var __focalPointRatioValue:Array<Float> = [0];
 
 	/**
 		The current OpenGL render context
@@ -175,6 +176,26 @@ class OpenGLRenderer extends DisplayObjectRenderer
 
 		__scrollRectMasks = new ObjectPool<Shape>(function() return new Shape());
 		__maskShader = __staticMaskShader;
+	}
+
+	/**
+		Assigns a type value to the active shader, if compatible with OpenFL core shaders
+		0: Solid Fill
+		1: Bitmap Fill
+		2: Linear Gradient
+		3: Radial Gradient
+	**/
+	public function applyGraphicsFillType(type:Int):Void
+	{
+		__fillTypeValue[0] = type;
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addIntOverride("openfl_FillType", __fillTypeValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__fillType != null) __currentShader.__fillType.value = __fillTypeValue;
+		}
 	}
 
 	/**
@@ -318,6 +339,27 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	}
 
 	/**
+		Applies render matrix to the active shader, if compatible with OpenFL core shaders
+	**/
+	public function applyGradient(gradient:Gradient):Void
+	{
+		__focalPointRatioValue[0] = gradient.focalPointRatio;
+		var bmd = gradient.getBitmap();
+
+		applyGraphicsFillType(gradient.type == LINEAR ? 2 : 3);
+		applyBitmapData(bmd, true);
+
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addFloatOverride("openfl_FocalPointRatio", __focalPointRatioValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = __focalPointRatioValue;
+		}
+	}
+
+	/**
 		Converts an OpenFL two-dimensional matrix to a compatible 3D matrix for use with
 		OpenGL rendering. Repeated calls to this method will return the same object with
 		new values, so it will need to be cloned if the result must be cached
@@ -404,6 +446,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		{
 			if (__currentShader.__position != null) __currentShader.__position.__useArray = true;
 			if (__currentShader.__textureCoord != null) __currentShader.__textureCoord.__useArray = true;
+			if (__currentShader.__vertexColor != null) __currentShader.__vertexColor.__useArray = true;
 			__context3D.setProgram(__currentShader.program);
 			__context3D.__flushGLProgram();
 			__context3D.__flushGLTextures();
@@ -484,6 +527,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			if (__currentShader.__hasColorTransform != null) __currentShader.__hasColorTransform.value = null;
 			if (__currentShader.__position != null) __currentShader.__position.value = null;
 			if (__currentShader.__matrix != null) __currentShader.__matrix.value = null;
+			if (__currentShader.__vertexColor != null) __currentShader.__vertexColor.value = null;
 			__currentShader.__clearUseArray();
 		}
 	}
@@ -534,7 +578,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		return __values;
 	}
 
-	@:noCompletion private function __initShader(shader:Shader):Shader
+	@:noCompletion private function __initShader(shader:Shader, defaultShader:Shader = null):Shader
 	{
 		if (shader != null)
 		{
@@ -550,52 +594,14 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			return shader;
 		}
 
-		return __defaultShader;
-	}
-
-	@:noCompletion private function __initDisplayShader(shader:Shader):Shader
-	{
-		if (shader != null)
-		{
-			// TODO: Change of GL context?
-
-			if (shader.__context == null)
-			{
-				shader.__context = __context3D;
-				shader.__init();
-			}
-
-			// currentShader = shader;
-			return shader;
-		}
-
-		return __defaultDisplayShader;
-	}
-
-	@:noCompletion private function __initGraphicsShader(shader:Shader):Shader
-	{
-		if (shader != null)
-		{
-			// TODO: Change of GL context?
-
-			if (shader.__context == null)
-			{
-				shader.__context = __context3D;
-				shader.__init();
-			}
-
-			// currentShader = shader;
-			return shader;
-		}
-
-		return __defaultGraphicsShader;
+		return defaultShader;
 	}
 
 	@:noCompletion private function __initShaderBuffer(shaderBuffer:ShaderBuffer):Shader
 	{
 		if (shaderBuffer != null)
 		{
-			return __initGraphicsShader(shaderBuffer.shader);
+			return __initShader(shaderBuffer.shader, __defaultGraphicsShader);
 		}
 
 		return __defaultGraphicsShader;

@@ -1145,6 +1145,32 @@ import lime.math.Vector2;
 		#end
 	}
 
+	private function __clearAndFlush()
+	{
+		#if !openfl_disable_display_render
+		if (__state.renderToTexture == null)
+		{
+			// TODO: Make sure state is correct for this?
+			if (__stage.context3D == this && !__stage.__renderer.__cleared)
+			{
+				__stage.__renderer.__clear();
+			}
+			else if (!__cleared)
+			{
+				// TODO: Throw error if error reporting is enabled?
+				clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
+			}
+		}
+
+		__flushGL();
+		#end
+
+		if (__state.program != null)
+		{
+			__state.program.__flush();
+		}
+	}
+
 	/**
 		Render the specified triangles using the current buffers and state of this
 		Context3D object.
@@ -1224,33 +1250,19 @@ import lime.math.Vector2;
 	**/
 	public function drawTriangles(indexBuffer:IndexBuffer3D, firstIndex:Int = 0, numTriangles:Int = -1):Void
 	{
-		#if !openfl_disable_display_render
-		if (__state.renderToTexture == null)
-		{
-			// TODO: Make sure state is correct for this?
-			if (__stage.context3D == this && !__stage.__renderer.__cleared)
-			{
-				__stage.__renderer.__clear();
-			}
-			else if (!__cleared)
-			{
-				// TODO: Throw error if error reporting is enabled?
-				clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
-			}
-		}
-
-		__flushGL();
-		#end
-
-		if (__state.program != null)
-		{
-			__state.program.__flush();
-		}
-
+		__clearAndFlush();
 		var count = (numTriangles == -1) ? indexBuffer.__numIndices : (numTriangles * 3);
 
 		__bindGLElementArrayBuffer(indexBuffer.__id);
 		gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, firstIndex * 2);
+	}
+
+	public function drawLines(indexBuffer:IndexBuffer3D, firstIndex:Int = 0, numLines:Int = -1):Void
+	{
+		__clearAndFlush();
+		var count = (numLines == -1) ? indexBuffer.__numIndices : (numLines * 2);
+		__bindGLElementArrayBuffer(indexBuffer.__id);
+		gl.drawElements(gl.LINES, count, gl.UNSIGNED_SHORT, firstIndex * 2);
 	}
 
 	/**
@@ -2037,29 +2049,7 @@ import lime.math.Vector2;
 
 	@:noCompletion private function __drawTriangles(firstIndex:Int = 0, count:Int):Void
 	{
-		#if !openfl_disable_display_render
-		if (__state.renderToTexture == null)
-		{
-			// TODO: Make sure state is correct for this?
-			if (__stage.context3D == this && !__stage.__renderer.__cleared)
-			{
-				__stage.__renderer.__clear();
-			}
-			else if (!__cleared)
-			{
-				// TODO: Throw error if error reporting is enabled?
-				clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
-			}
-		}
-
-		__flushGL();
-		#end
-
-		if (__state.program != null)
-		{
-			__state.program.__flush();
-		}
-
+		__clearAndFlush();
 		gl.drawArrays(gl.TRIANGLES, firstIndex, count);
 	}
 

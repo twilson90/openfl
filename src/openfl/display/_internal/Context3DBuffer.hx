@@ -78,6 +78,7 @@ class Context3DBuffer
 		if (vertexBufferData.length > vertexCount)
 		{
 			vertexCount = vertexBufferData.length;
+			if (vertexBuffer != null) vertexBuffer.dispose();
 			vertexBuffer = context3D.createVertexBuffer(vertexCount, dataPerVertex, DYNAMIC_DRAW);
 		}
 

@@ -1451,6 +1451,7 @@ class BitmapData implements IBitmapDrawable
 
 			#if lime
 			__indexBufferContext = context.__context;
+			if (__indexBuffer != null) __indexBuffer.dispose();
 			__indexBuffer = null;
 
 			if (scale9Grid != null)

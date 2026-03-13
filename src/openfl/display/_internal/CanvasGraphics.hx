@@ -637,7 +637,8 @@ class CanvasGraphics
 			context.moveTo(pathPosition.x, pathPosition.y);
 		}
 
-		var data = new DrawCommandReader(commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(commands);
 
 		var x:Float;
 		var y:Float;
@@ -975,7 +976,7 @@ class CanvasGraphics
 
 		paint();
 
-		data.destroy();
+		DrawCommandReader.__pool.release(data);
 		#end
 	}
 
@@ -1016,7 +1017,8 @@ class CanvasGraphics
 		strokeStart.setTo(x0, y0);
 		strokePosition.setTo(x0, y0);
 
-		var data = new DrawCommandReader(graphics.__commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(graphics.__commands);
 
 		for (type in graphics.__commands.types)
 		{
@@ -1145,7 +1147,7 @@ class CanvasGraphics
 
 		if (!hitTesting || !hitTestResult) endFill();
 
-		data.destroy();
+		DrawCommandReader.__pool.release(data);
 		#end
 	}
 

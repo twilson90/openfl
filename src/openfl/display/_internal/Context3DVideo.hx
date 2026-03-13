@@ -39,7 +39,7 @@ class Context3DVideo
 			renderer.__pushMaskObject(video);
 			// renderer.filterManager.pushObject (video);
 
-			var shader = renderer.__initDisplayShader(cast video.__worldShader);
+			var shader = renderer.__initShader(cast video.__worldShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
 
 			// TODO: Support ShaderInput<Video>

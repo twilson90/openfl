@@ -80,6 +80,10 @@ import openfl.Vector;
 		// ignored
 	}
 	@:require(flash11_6) public function readGraphicsData(recurse:Bool = true):Vector<IGraphicsData>;
+	public inline function setWireframe(value:Bool):Void
+	{
+		// ignored
+	}
 }
 #else
 typedef Graphics = openfl.display.Graphics;

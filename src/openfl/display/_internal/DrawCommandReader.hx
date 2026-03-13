@@ -10,6 +10,7 @@ import openfl.display.JointStyle;
 import openfl.display.LineScaleMode;
 import openfl.display.SpreadMethod;
 import openfl.display.TriangleCulling;
+import openfl.utils.ObjectPool;
 import openfl.geom.Matrix;
 import openfl.Vector;
 
@@ -22,6 +23,9 @@ import openfl.Vector;
 @SuppressWarnings("checkstyle:FieldDocComment")
 class DrawCommandReader
 {
+	@:noCompletion public static var __pool:ObjectPool<DrawCommandReader> = new ObjectPool<DrawCommandReader>(() -> new DrawCommandReader(),
+		r -> r.reset(null));
+
 	public var buffer:DrawCommandBuffer;
 
 	private var bPos:Int;
@@ -33,13 +37,7 @@ class DrawCommandReader
 	private var prev:DrawCommandType;
 	private var tsPos:Int;
 
-	public function new(buffer:DrawCommandBuffer)
-	{
-		this.buffer = buffer;
-
-		bPos = iPos = fPos = oPos = ffPos = iiPos = tsPos = 0;
-		prev = UNKNOWN;
-	}
+	public function new() {}
 
 	@:noCompletion private inline function advance():Void
 	{
@@ -128,12 +126,6 @@ class DrawCommandReader
 	@:noCompletion private inline function bool(index:Int):Bool
 	{
 		return buffer.b[bPos + index];
-	}
-
-	public function destroy():Void
-	{
-		buffer = null;
-		reset();
 	}
 
 	@:noCompletion private inline function fArr(index:Int):Array<Float>
@@ -317,9 +309,11 @@ class DrawCommandReader
 		return new WindingNonZeroView(this);
 	}
 
-	public function reset():Void
+	public function reset(buffer:DrawCommandBuffer):Void
 	{
+		this.buffer = buffer;
 		bPos = iPos = fPos = oPos = ffPos = iiPos = tsPos = 0;
+		prev = UNKNOWN;
 	}
 
 	public inline function skip(type:DrawCommandType):Void

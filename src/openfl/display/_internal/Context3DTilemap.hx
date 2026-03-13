@@ -309,7 +309,7 @@ class Context3DTilemap
 
 		if (bufferPosition > lastFlushedPosition && currentBitmapData != null && currentShader != null)
 		{
-			var shader = renderer.__initDisplayShader(cast currentShader);
+			var shader = renderer.__initShader(cast currentShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
 			renderer.applyBitmapData(currentBitmapData, tilemap.smoothing);
 			renderer.applyMatrix(renderer.__getMatrix(tilemap.__renderTransform, AUTO));

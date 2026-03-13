@@ -34,7 +34,7 @@ class Context3DBitmap
 			renderer.__pushMaskObject(bitmap);
 			// renderer.filterManager.pushObject (bitmap);
 
-			var shader = renderer.__initDisplayShader(cast bitmap.__worldShader);
+			var shader = renderer.__initShader(cast bitmap.__worldShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
 			renderer.applyBitmapData(bitmap.__bitmapData, renderer.__allowSmoothing && (bitmap.smoothing || renderer.__upscaled));
 			renderer.applyMatrix(renderer.__getMatrix(bitmap.__renderTransform, bitmap.pixelSnapping));

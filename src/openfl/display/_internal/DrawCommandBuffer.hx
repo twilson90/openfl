@@ -71,7 +71,8 @@ class DrawCommandBuffer
 			return other;
 		}
 
-		var data = new DrawCommandReader(other);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(other);
 
 		for (type in other.types)
 		{
@@ -144,7 +145,7 @@ class DrawCommandBuffer
 			}
 		}
 
-		data.destroy();
+		DrawCommandReader.__pool.release(data);
 		return other;
 	}
 

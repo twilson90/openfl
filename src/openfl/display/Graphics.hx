@@ -7,6 +7,8 @@ import openfl.display._internal.Context3DBuffer;
 import openfl.display._internal.DrawCommandBuffer;
 import openfl.display._internal.DrawCommandReader;
 import openfl.display._internal.ShaderBuffer;
+import openfl.display._internal.Context3DBatchBuffer;
+import openfl.display._internal.Context3DGraphics;
 import openfl.display3D.IndexBuffer3D;
 import openfl.display3D.VertexBuffer3D;
 import openfl.errors.ArgumentError;
@@ -15,8 +17,10 @@ import openfl.geom.Point;
 import openfl.geom.Rectangle;
 import openfl.utils._internal.Float32Array;
 import openfl.utils._internal.UInt16Array;
+import openfl.utils._internal.UInt32Array;
 import openfl.utils.ObjectPool;
 import openfl.Vector;
+import openfl.utils.ArrayUtil;
 #if lime
 import lime.graphics.cairo.Cairo;
 #end
@@ -77,16 +81,17 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __shaderBufferPool:ObjectPool<ShaderBuffer>;
 	@:noCompletion private var __softwareDirty:Bool;
 	@:noCompletion private var __transformDirty:Bool;
-	@:noCompletion private var __triangleIndexBuffer:IndexBuffer3D;
-	@:noCompletion private var __triangleIndexBufferCount:Int;
-	@:noCompletion private var __triangleIndexBufferData:UInt16Array;
 	@:noCompletion private var __usedShaderBuffers:List<ShaderBuffer>;
 	@:noCompletion private var __vertexBuffer:VertexBuffer3D;
+	@:noCompletion private var __indexBuffer:IndexBuffer3D;
+	@:noCompletion private var __wireframeIndexBuffer:IndexBuffer3D;
 	@:noCompletion private var __vertexBufferCount:Int;
-	@:noCompletion private var __vertexBufferCountUVT:Int;
+	@:noCompletion private var __indexBufferCount:Int;
+	@:noCompletion private var __batchBuffer:Context3DBatchBuffer;
+	@:noCompletion private var __indexBufferData:UInt16Array;
 	@:noCompletion private var __vertexBufferData:Float32Array;
-	@:noCompletion private var __vertexBufferDataUVT:Float32Array;
-	@:noCompletion private var __vertexBufferUVT:VertexBuffer3D;
+	@:noCompletion private var __vertexBufferDataInt:UInt32Array;
+	@:noCompletion private var __wireframe:Bool;
 	@:noCompletion private var __invalidateVertexBufferOnTransform:Bool;
 	@:noCompletion private var __visible:Bool;
 	@:noCompletion private var __isHardwareDrawable:Bool;
@@ -336,7 +341,9 @@ import js.html.CanvasRenderingContext2D;
 			if (alpha > 0)
 			{
 				__visible = true;
+				#if openfl_disable_hardware_path_rendering
 				__isHardwareDrawable = false;
+				#end
 				break;
 			}
 		}
@@ -502,7 +509,9 @@ import js.html.CanvasRenderingContext2D;
 		__commands.cubicCurveTo(controlX1, controlY1, controlX2, controlY2, anchorX, anchorY);
 
 		__dirty = true;
+		#if openfl_disable_hardware_path_rendering
 		__isHardwareDrawable = false;
+		#end
 	}
 
 	/**
@@ -544,7 +553,10 @@ import js.html.CanvasRenderingContext2D;
 		__commands.curveTo(controlX, controlY, anchorX, anchorY);
 
 		__dirty = true;
+
+		#if openfl_disable_hardware_path_rendering
 		__isHardwareDrawable = false;
+		#end
 	}
 
 	/**
@@ -1335,7 +1347,10 @@ import js.html.CanvasRenderingContext2D;
 		if (thickness != null)
 		{
 			__visible = true;
+
+			#if openfl_disable_hardware_path_rendering
 			__isHardwareDrawable = false;
+			#end
 		}
 	}
 
@@ -1367,7 +1382,10 @@ import js.html.CanvasRenderingContext2D;
 		__commands.lineTo(x, y);
 
 		__dirty = true;
+
+		#if openfl_disable_hardware_path_rendering
 		__isHardwareDrawable = false;
+		#end
 	}
 
 	/**
@@ -1448,6 +1466,16 @@ import js.html.CanvasRenderingContext2D;
 		var graphicsData = new Vector<IGraphicsData>();
 		__owner.__readGraphicsData(graphicsData, recurse);
 		return graphicsData;
+	}
+
+	public function setWireframe(value:Bool):Bool
+	{
+		if (__wireframe != value)
+		{
+			__wireframe = value;
+			__wireframeIndexBuffer = null;
+		}
+		return value;
 	}
 
 	@:noCompletion private function __cleanup():Void
@@ -1531,6 +1559,12 @@ import js.html.CanvasRenderingContext2D;
 		{
 			if (shapeFlag)
 			{
+				#if openfl_gl_graphics
+				if (__vertexBufferData != null)
+				{
+					return Context3DGraphics.hitTest(this, px, py);
+				}
+				#end
 				#if (js && html5)
 				return CanvasGraphics.hitTest(this, px, py);
 				#elseif (lime_cffi)
@@ -1546,7 +1580,9 @@ import js.html.CanvasRenderingContext2D;
 
 	@:noCompletion private function __readGraphicsData(graphicsData:Vector<IGraphicsData>):Void
 	{
-		var data = new DrawCommandReader(__commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(__commands);
+
 		var path:GraphicsPath = null;
 		var stroke:GraphicsStroke = null;
 
@@ -1657,6 +1693,8 @@ import js.html.CanvasRenderingContext2D;
 		{
 			graphicsData.push(path);
 		}
+
+		DrawCommandReader.__pool.release(data);
 	}
 
 	@:noCompletion private function __update(displayMatrix:Matrix, pixelRatio:Float):Void
@@ -2476,7 +2514,9 @@ class GraphicsBoundsHelper
 		if (bounds != null) bounds.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
 		if (boundsExStroke != null) boundsExStroke.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
 
-		var data = new DrawCommandReader(commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(commands);
+
 		for (type in commands.types)
 		{
 			switch (type)
@@ -2704,6 +2744,8 @@ class GraphicsBoundsHelper
 		}
 
 		endPath(hasFill);
+
+		DrawCommandReader.__pool.release(data);
 
 		if (bounds != null)
 		{

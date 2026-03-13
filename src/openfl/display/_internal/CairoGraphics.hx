@@ -583,7 +583,8 @@ class CairoGraphics
 			cairo.moveTo(pathPosition.x, pathPosition.y);
 		}
 
-		var data = new DrawCommandReader(commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(commands);
 
 		var x:Float;
 		var y:Float;
@@ -922,9 +923,9 @@ class CairoGraphics
 			if (hitTestResult) break;
 		}
 
-		paint();
+		DrawCommandReader.__pool.release(data);
 
-		data.destroy();
+		paint();
 	}
 
 	private static function processCommands(renderer:CairoRenderer = null):Void
@@ -963,7 +964,8 @@ class CairoGraphics
 		strokeStart.setTo(x0, y0);
 		strokePosition.setTo(x0, y0);
 
-		var data = new DrawCommandReader(graphics.__commands);
+		var data = DrawCommandReader.__pool.get();
+		data.reset(graphics.__commands);
 
 		for (type in graphics.__commands.types)
 		{
@@ -1092,7 +1094,7 @@ class CairoGraphics
 
 		if (!hitTesting || !hitTestResult) endFill();
 
-		data.destroy();
+		DrawCommandReader.__pool.release(data);
 	}
 
 	private static inline function isCCW(x1:Float, y1:Float, x2:Float, y2:Float, x3:Float, y3:Float):Bool
