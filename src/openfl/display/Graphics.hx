@@ -16,7 +16,6 @@ import openfl.geom.Matrix;
 import openfl.geom.Point;
 import openfl.geom.Rectangle;
 import openfl.utils._internal.Float32Array;
-import openfl.utils._internal.UInt16Array;
 import openfl.utils._internal.UInt32Array;
 import openfl.utils.ObjectPool;
 import openfl.Vector;
@@ -60,6 +59,8 @@ import js.html.CanvasRenderingContext2D;
 @:access(openfl.display.IGraphicsData)
 @:access(openfl.display.IGraphicsFill)
 @:access(openfl.display.Shader)
+@:access(openfl.display._internal.ShaderBuffer)
+@:access(openfl.display._internal.Context3DBatchBuffer)
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:final class Graphics
@@ -67,6 +68,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private static var maxTextureHeight:Null<Int> = null;
 	@:noCompletion private static var maxTextureWidth:Null<Int> = null;
 	@:noCompletion private static var tempVertices:Vector<Float> = new Vector<Float>();
+	@:noCompletion private static var tempBounds:GraphicsBounds = {bounds: new Rectangle(), boundsExStroke: new Rectangle()};
 
 	@:noCompletion private var __bounds:Rectangle;
 	@:noCompletion private var __boundsExStroke:Rectangle;
@@ -76,22 +78,12 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __hardwareDirty:Bool;
 	@:noCompletion private var __height:Int;
 	@:noCompletion private var __managed:Bool;
-	@:noCompletion private var __quadBuffer:Context3DBuffer;
 	@:noCompletion private var __renderTransform:Matrix;
-	@:noCompletion private var __shaderBufferPool:ObjectPool<ShaderBuffer>;
 	@:noCompletion private var __softwareDirty:Bool;
 	@:noCompletion private var __transformDirty:Bool;
 	@:noCompletion private var __usedShaderBuffers:List<ShaderBuffer>;
-	@:noCompletion private var __vertexBuffer:VertexBuffer3D;
-	@:noCompletion private var __indexBuffer:IndexBuffer3D;
-	@:noCompletion private var __wireframeIndexBuffer:IndexBuffer3D;
-	@:noCompletion private var __vertexBufferCount:Int;
-	@:noCompletion private var __indexBufferCount:Int;
-	@:noCompletion private var __batchBuffer:Context3DBatchBuffer;
-	@:noCompletion private var __indexBufferData:UInt16Array;
-	@:noCompletion private var __vertexBufferData:Float32Array;
-	@:noCompletion private var __vertexBufferDataInt:UInt32Array;
-	@:noCompletion private var __wireframe:Bool;
+	@:noCompletion private var __buffer:Context3DBatchBuffer;
+	@:noCompletion private var __wireframe:Bool = #if openfl_gl_wireframe true #else false #end;
 	@:noCompletion private var __invalidateVertexBufferOnTransform:Bool;
 	@:noCompletion private var __visible:Bool;
 	@:noCompletion private var __isHardwareDrawable:Bool;
@@ -120,7 +112,6 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands = new DrawCommandBuffer();
 		__renderTransform = new Matrix();
-		__usedShaderBuffers = new List<ShaderBuffer>();
 		__worldTransform = new Matrix();
 		__bounds = new Rectangle();
 		__boundsExStroke = new Rectangle();
@@ -131,7 +122,6 @@ import js.html.CanvasRenderingContext2D;
 		__bitmapScaleX = 1;
 		__bitmapScaleY = 1;
 
-		__shaderBufferPool = new ObjectPool<ShaderBuffer>(function() return new ShaderBuffer());
 		__isHardwareDrawable = true;
 	}
 
@@ -405,8 +395,9 @@ import js.html.CanvasRenderingContext2D;
 	{
 		if (shader != null)
 		{
+			if (__usedShaderBuffers == null) __usedShaderBuffers = new List<ShaderBuffer>();
 			#if lime
-			var shaderBuffer = __shaderBufferPool.get();
+			var shaderBuffer = ShaderBuffer.__pool.get();
 			__usedShaderBuffers.add(shaderBuffer);
 			shaderBuffer.update(cast shader);
 
@@ -425,13 +416,16 @@ import js.html.CanvasRenderingContext2D;
 	public function clear():Void
 	{
 		#if lime
-		for (shaderBuffer in __usedShaderBuffers)
+		if (__usedShaderBuffers != null)
 		{
-			__shaderBufferPool.release(shaderBuffer);
+			for (shaderBuffer in __usedShaderBuffers)
+			{
+				ShaderBuffer.__pool.release(shaderBuffer);
+			}
+			__usedShaderBuffers.clear();
 		}
 		#end
 
-		__usedShaderBuffers.clear();
 		__commands.clear();
 
 		if (!__bounds.isEmpty())
@@ -508,6 +502,7 @@ import js.html.CanvasRenderingContext2D;
 	{
 		__commands.cubicCurveTo(controlX1, controlY1, controlX2, controlY2, anchorX, anchorY);
 
+		// __invalidateVertexBufferOnTransform = true;
 		__dirty = true;
 		#if openfl_disable_hardware_path_rendering
 		__isHardwareDrawable = false;
@@ -552,6 +547,7 @@ import js.html.CanvasRenderingContext2D;
 	{
 		__commands.curveTo(controlX, controlY, anchorX, anchorY);
 
+		// __invalidateVertexBufferOnTransform = true;
 		__dirty = true;
 
 		#if openfl_disable_hardware_path_rendering
@@ -569,7 +565,7 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.drawCircle(x, y, radius);
 
-		__invalidateVertexBufferOnTransform = true;
+		// __invalidateVertexBufferOnTransform = true;
 		__dirty = true;
 	}
 
@@ -597,7 +593,7 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.drawEllipse(x, y, width, height);
 
-		__invalidateVertexBufferOnTransform = true;
+		// __invalidateVertexBufferOnTransform = true;
 		__dirty = true;
 	}
 
@@ -896,7 +892,7 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.drawRoundRect(x, y, width, height, ellipseWidth, ellipseHeight);
 
-		__invalidateVertexBufferOnTransform = true;
+		// __invalidateVertexBufferOnTransform = true;
 		__dirty = true;
 	}
 
@@ -1473,7 +1469,11 @@ import js.html.CanvasRenderingContext2D;
 		if (__wireframe != value)
 		{
 			__wireframe = value;
-			__wireframeIndexBuffer = null;
+			if (__buffer != null && __buffer.wireframeIndexBuffer != null)
+			{
+				__buffer.wireframeIndexBuffer.dispose();
+				__buffer.wireframeIndexBuffer = null;
+			}
 		}
 		return value;
 	}
@@ -1512,6 +1512,11 @@ import js.html.CanvasRenderingContext2D;
 		#else
 		__cairo = null;
 		#end
+
+		if (__buffer != null)
+		{
+			Context3DBatchBuffer.__pool.release(__buffer);
+		}
 	}
 
 	@:noCompletion private function __updateBounds():Void
@@ -1526,7 +1531,9 @@ import js.html.CanvasRenderingContext2D;
 
 		var originalBounds = Rectangle.__pool.get();
 		originalBounds.copyFrom(__bounds);
-		GraphicsBoundsHelper.calculateBounds(__commands, __bounds, __boundsExStroke, this);
+		GraphicsBoundsHelper.calculateBounds(this, __commands, tempBounds);
+		__bounds.copyFrom(tempBounds.bounds);
+		__boundsExStroke.copyFrom(tempBounds.boundsExStroke);
 		__transformDirty = !originalBounds.equals(__bounds);
 		Rectangle.__pool.release(originalBounds);
 
@@ -1559,17 +1566,7 @@ import js.html.CanvasRenderingContext2D;
 		{
 			if (shapeFlag)
 			{
-				#if openfl_gl_graphics
-				if (__vertexBufferData != null)
-				{
-					return Context3DGraphics.hitTest(this, px, py);
-				}
-				#end
-				#if (js && html5)
-				return CanvasGraphics.hitTest(this, px, py);
-				#elseif (lime_cffi)
-				return CairoGraphics.hitTest(this, px, py);
-				#end
+				return Context3DGraphics.hitTest(this, px, py);
 			}
 
 			return true;
@@ -1836,11 +1833,7 @@ import js.html.CanvasRenderingContext2D;
 		var tx = x * parentTransform.a + y * parentTransform.c + parentTransform.tx;
 		var ty = x * parentTransform.b + y * parentTransform.d + parentTransform.ty;
 
-		#if openfl_disable_graphics_pixel_snapping
-		var pixelSnapping = false;
-		#else
-		var pixelSnapping = !useScale9Grid;
-		#end
+		var pixelSnapping = #if openfl_disable_graphics_pixel_snapping false #else !useScale9Grid #end;
 
 		if (pixelSnapping)
 		{
@@ -1872,12 +1865,12 @@ import js.html.CanvasRenderingContext2D;
 		}
 
 		// Mark dirty if render size changed
+		#if !openfl_disable_graphics_upscaling
 		if (newWidth != __width || newHeight != __height)
 		{
-			#if !openfl_disable_graphics_upscaling
-			__dirty = true;
-			#end
+			__softwareDirty = true;
 		}
+		#end
 		__width = newWidth;
 		__height = newHeight;
 	}
@@ -1891,8 +1884,8 @@ import js.html.CanvasRenderingContext2D;
 			var strokePaddingY = (__bounds.y - __boundsExStroke.y);
 			var startX = __getScale9GridPositionX(__boundsExStroke.x);
 			var startY = __getScale9GridPositionY(__boundsExStroke.y);
-			var scaleX = __owner.scaleX;
-			var scaleY = __owner.scaleY;
+			var scaleX = __owner.__scaleX;
+			var scaleY = __owner.__scaleY;
 			result.x = startX + (strokePaddingX * scaleX) + __renderTransform.tx;
 			result.y = startY + (strokePaddingY * scaleY) + __renderTransform.ty;
 		}
@@ -1906,6 +1899,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private function __generateUV(vertices:Vector<Float>, textureWidth:Float, textureHeight:Float, matrix:Matrix, result:Vector<Float>):Void
 	{
 		var length = vertices.length;
+		var numVertices = Std.int(length / 2);
 		var x:Float, y:Float, textureX:Float, textureY:Float;
 		result.length = length;
 		var i = 0;
@@ -1950,26 +1944,38 @@ import js.html.CanvasRenderingContext2D;
 			vertices = tempVertices;
 		}
 
-		while (i < length)
+		if (matrix == null)
 		{
-			x = vertices[i];
-			y = vertices[i + 1];
-			textureX = matrix != null ? matrix.__transformInverseX(x, y) : x;
-			textureY = matrix != null ? matrix.__transformInverseY(x, y) : y;
-			result[i] = textureX / textureWidth;
-			result[i + 1] = textureY / textureHeight;
-			i += 2;
+			for (i in 0...numVertices)
+			{
+				x = vertices[i * 2];
+				y = vertices[i * 2 + 1];
+				result[i * 2] = x / textureWidth;
+				result[i * 2 + 1] = y / textureHeight;
+			}
+		}
+		else
+		{
+			for (i in 0...numVertices)
+			{
+				x = vertices[i * 2];
+				y = vertices[i * 2 + 1];
+				textureX = matrix.__transformInverseX(x, y);
+				textureY = matrix.__transformInverseY(x, y);
+				result[i * 2] = textureX / textureWidth;
+				result[i * 2 + 1] = textureY / textureHeight;
+			}
 		}
 	}
 
 	@:noCompletion private function __getScale9GridPositionX(pos:Float):Float
 	{
-		return __getScale9GridPosition(pos, __owner.__scale9Grid.x, __owner.__scale9Grid.width, __boundsExStroke.width, __owner.scaleX);
+		return __getScale9GridPosition(pos, __owner.__scale9Grid.x, __owner.__scale9Grid.width, __boundsExStroke.width, __owner.__scaleX);
 	}
 
 	@:noCompletion private function __getScale9GridPositionY(pos:Float):Float
 	{
-		return __getScale9GridPosition(pos, __owner.__scale9Grid.y, __owner.__scale9Grid.height, __boundsExStroke.height, __owner.scaleY);
+		return __getScale9GridPosition(pos, __owner.__scale9Grid.y, __owner.__scale9Grid.height, __boundsExStroke.height, __owner.__scaleY);
 	}
 
 	@:noCompletion private inline function __getScale9GridPosition(pos:Float, start:Float, center:Float, total:Float, scale:Float):Float
@@ -2020,10 +2026,11 @@ import js.html.CanvasRenderingContext2D;
 		{
 			var patternBounds = Rectangle.__pool.get();
 
-			GraphicsBoundsHelper.calculateBounds(commands, patternBounds, null, this);
+			GraphicsBoundsHelper.calculateBounds(this, commands, tempBounds);
+			var patternBounds = tempBounds.bounds;
 
-			var scaleX = __owner.scaleX;
-			var scaleY = __owner.scaleY;
+			var scaleX = __owner.__scaleX;
+			var scaleY = __owner.__scaleY;
 
 			var scaledLeft = __getScale9GridPositionX(patternBounds.x);
 			var scaledTop = __getScale9GridPositionY(patternBounds.y);
@@ -2072,6 +2079,9 @@ import js.html.CanvasRenderingContext2D;
 		#elseif (openfl_force_hw_graphics || force_hw_graphics)
 		return true;
 		#end
+		#if openfl_gl_graphics_use_software
+		return false;
+		#end
 		return __isHardwareDrawable;
 	}
 }
@@ -2083,8 +2093,8 @@ import js.html.CanvasRenderingContext2D;
 class GraphicsBoundsHelper
 {
 	private static var graphics:Graphics;
-	private static var bounds:Rectangle;
-	private static var boundsExStroke:Rectangle;
+	private static var bounds:Rectangle = new Rectangle();
+	private static var boundsExStroke:Rectangle = new Rectangle();
 	private static var strokePaddingX:Float;
 	private static var strokePaddingY:Float;
 	private static var hasFill:Bool;
@@ -2257,31 +2267,29 @@ class GraphicsBoundsHelper
 			dx2 /= len2;
 			dy2 /= len2;
 
-			var nx1 = -dy1 * strokePaddingX;
-			var ny1 = dx1 * strokePaddingY;
-
-			var nx2 = -dy2 * strokePaddingX;
-			var ny2 = dx2 * strokePaddingY;
+			var nx1 = -dy1;
+			var ny1 = dx1;
+			var nx2 = -dy2;
+			var ny2 = dx2;
 
 			if (jointStyle == JointStyle.MITER)
 			{
-				var cosTheta = dx1 * dx2 + dy1 * dy2;
-				cosTheta = Math.min(1, Math.max(-1, cosTheta));
-				var theta = Math.acos(cosTheta);
+				var dot = dx1 * dx2 + dy1 * dy2;
+				var miterLength = 1 / Math.sqrt((1 + dot) / 2);
 
-				if (theta <= miterLimit)
+				if (miterLength <= miterLimit)
 				{
-					var p0x = x1 - dx1 * strokePaddingX + nx1;
-					var p0y = y1 - dy1 * strokePaddingY + ny1;
+					var p0x = x1 - (dx1 * strokePaddingX) + (nx1 * strokePaddingX);
+					var p0y = y1 - (dy1 * strokePaddingY) + (ny1 * strokePaddingY);
 
-					var p1x = x1 + nx1;
-					var p1y = y1 + ny1;
+					var p1x = x1 + (nx1 * strokePaddingX);
+					var p1y = y1 + (ny1 * strokePaddingY);
 
-					var p2x = x1 + nx2;
-					var p2y = y1 + ny2;
+					var p2x = x1 + (nx2 * strokePaddingX);
+					var p2y = y1 + (ny2 * strokePaddingY);
 
-					var p3x = x1 + dx2 * strokePaddingX + nx2;
-					var p3y = y1 + dy2 * strokePaddingY + ny2;
+					var p3x = x1 + (dx2 * strokePaddingX) + (nx2 * strokePaddingX);
+					var p3y = y1 + (dy2 * strokePaddingY) + (ny2 * strokePaddingY);
 
 					var denom = (p1x - p0x) * (p3y - p2y) - (p1y - p0y) * (p3x - p2x);
 					if (Math.abs(denom) > EPSILON)
@@ -2296,8 +2304,8 @@ class GraphicsBoundsHelper
 			}
 
 			// bevel joints
-			inflate(bounds, x1 + nx1, y1 + ny1, false);
-			inflate(bounds, x1 + nx2, y1 + ny2, false);
+			inflate(bounds, x1 + (nx1 * strokePaddingX), y1 + (ny1 * strokePaddingY), false);
+			inflate(bounds, x1 + (nx2 * strokePaddingX), y1 + (ny2 * strokePaddingY), false);
 		}
 	}
 
@@ -2405,35 +2413,32 @@ class GraphicsBoundsHelper
 
 		minMax(p4, res);
 
-		if (!(((p2 < p4 && p2 > p1) || (p2 > p4 && p2 < p1)) && ((p3 < p4 && p3 > p1) || (p3 > p4 && p3 < p1))))
+		// The derivative of a cubic Bézier curve is a quadratic Bézier curve.
+		// f(t) = a * t * t + b * t + c = 0
+		var a = -p1 + 3 * p2 + p4 - 3 * p3;
+		var b = 2 * p1 - 4 * p2 + 2 * p3;
+		var c = p2 - p1;
+		// d is a discriminant
+		var d = b * b - 4 * a * c;
+		if (Math.abs(a) < EPSILON)
 		{
-			// The derivative of a cubic Bézier curve is a quadratic Bézier curve.
-			// f(t) = a * t * t + b * t + c = 0
-			var a = -p1 + 3 * p2 + p4 - 3 * p3;
-			var b = 2 * p1 - 4 * p2 + 2 * p3;
-			var c = p2 - p1;
-			// d is a discriminant
-			var d = b * b - 4 * a * c;
-			if (a == 0)
+			var t = -c / b;
+			if (t > 0 && t < 1)
 			{
-				var t = -c / b;
-				if (t > 0 && t < 1)
-				{
-					minMax(calculateBezierCubicPoint(t, p1, p2, p3, p4), res);
-				}
+				minMax(calculateBezierCubicPoint(t, p1, p2, p3, p4), res);
 			}
-			else if (d >= 0)
+		}
+		else if (d >= 0)
+		{
+			var t1 = (-b + Math.sqrt(d)) / (2 * a);
+			var t2 = (-b - Math.sqrt(d)) / (2 * a);
+			if (t1 > 0 && t1 < 1)
 			{
-				var t1 = (-b + Math.sqrt(d)) / (2 * a);
-				var t2 = (-b - Math.sqrt(d)) / (2 * a);
-				if (t1 > 0 && t1 < 1)
-				{
-					minMax(calculateBezierCubicPoint(t1, p1, p2, p3, p4), res);
-				}
-				if (t2 > 0 && t2 < 1)
-				{
-					minMax(calculateBezierCubicPoint(t2, p1, p2, p3, p4), res);
-				}
+				minMax(calculateBezierCubicPoint(t1, p1, p2, p3, p4), res);
+			}
+			if (t2 > 0 && t2 < 1)
+			{
+				minMax(calculateBezierCubicPoint(t2, p1, p2, p3, p4), res);
 			}
 		}
 
@@ -2498,11 +2503,9 @@ class GraphicsBoundsHelper
 		currCY2 = null;
 	}
 
-	public static function calculateBounds(commands:DrawCommandBuffer, bounds:Rectangle, boundsExStroke:Rectangle, graphics:Graphics):Void
+	public static function calculateBounds(graphics:Graphics, commands:DrawCommandBuffer, result:GraphicsBounds):Void
 	{
 		GraphicsBoundsHelper.graphics = graphics;
-		GraphicsBoundsHelper.bounds = bounds;
-		GraphicsBoundsHelper.boundsExStroke = boundsExStroke;
 
 		strokePaddingX = 0.0;
 		strokePaddingY = 0.0;
@@ -2511,8 +2514,8 @@ class GraphicsBoundsHelper
 		jointStyle = JointStyle.ROUND;
 		miterLimit = 0.0;
 
-		if (bounds != null) bounds.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
-		if (boundsExStroke != null) boundsExStroke.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
+		bounds.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
+		boundsExStroke.setTo(Math.NaN, Math.NaN, Math.NaN, Math.NaN);
 
 		var data = DrawCommandReader.__pool.get();
 		data.reset(commands);
@@ -2703,30 +2706,25 @@ class GraphicsBoundsHelper
 					jointStyle = c.joints;
 					capsStyle = c.caps;
 					miterLimit = c.miterLimit;
-					var scaleX = 1.0;
-					var scaleY = 1.0;
-					if (graphics.__useScale9Grid)
-					{
-						scaleX = Math.abs(graphics.__owner.__worldTransform.a);
-						scaleY = Math.abs(graphics.__owner.__worldTransform.d);
-					}
-					else
-					{
-						if (scaleX < 1.0) scaleX = 1.0;
-						if (scaleY < 1.0) scaleY = 1.0;
-						switch (c.scaleMode)
-						{
-							case LineScaleMode.NONE:
-								scaleX = scaleY = Math.max(scaleX, scaleY);
-							case LineScaleMode.VERTICAL:
-								scaleY = scaleX;
-							case LineScaleMode.HORIZONTAL:
-								scaleX = scaleY;
-							default:
-						}
-					}
-					strokePaddingX = scaleX != 0.0 ? strokePadding / scaleX : 0.0;
-					strokePaddingY = scaleY != 0.0 ? strokePadding / scaleY : 0.0;
+					strokePaddingX = strokePadding;
+					strokePaddingY = strokePadding;
+
+				// var scaleX = 1.0;
+				// var scaleY = 1.0;
+				// if (scaleX < 1.0) scaleX = 1.0;
+				// if (scaleY < 1.0) scaleY = 1.0;
+				// switch (c.scaleMode)
+				// {
+				// 	case LineScaleMode.NONE:
+				// 		scaleX = scaleY = Math.max(scaleX, scaleY);
+				// 	case LineScaleMode.VERTICAL:
+				// 		scaleY = scaleX;
+				// 	case LineScaleMode.HORIZONTAL:
+				// 		scaleX = scaleY;
+				// 	default:
+				// }
+				// strokePaddingX = scaleX != 0.0 ? strokePadding / scaleX : 0.0;
+				// strokePaddingY = scaleY != 0.0 ? strokePadding / scaleY : 0.0;
 
 				case END_FILL:
 					endPath(hasFill);
@@ -2747,20 +2745,42 @@ class GraphicsBoundsHelper
 
 		DrawCommandReader.__pool.release(data);
 
-		if (bounds != null)
+		if (Math.isNaN(bounds.width) || Math.isNaN(bounds.height))
 		{
-			if (Math.isNaN(bounds.width) || Math.isNaN(bounds.height))
-			{
-				bounds.setEmpty();
-			}
+			bounds.setEmpty();
 		}
-		if (boundsExStroke != null)
+		if ((Math.isNaN(boundsExStroke.width) || Math.isNaN(boundsExStroke.height)))
 		{
-			if ((Math.isNaN(boundsExStroke.width) || Math.isNaN(boundsExStroke.height)))
-			{
-				boundsExStroke.setEmpty();
-			}
+			boundsExStroke.setEmpty();
 		}
+
+		if (graphics.__useScale9Grid)
+		{
+			// correct the bounds after scale9grid applied.
+			var left = (bounds.x - boundsExStroke.x) * 2.0;
+			var top = (bounds.y - boundsExStroke.y) * 2.0;
+			var right = ((bounds.x + bounds.width) - (boundsExStroke.x + boundsExStroke.width)) * 2.0;
+			var bottom = ((bounds.y + bounds.height) - (boundsExStroke.y + boundsExStroke.height)) * 2.0;
+
+			var scaleX = graphics.__owner.__scaleX;
+			var scaleY = graphics.__owner.__scaleY;
+			var scale9Grid = graphics.__owner.__scale9Grid;
+			var width = boundsExStroke.width;
+			var height = boundsExStroke.height;
+			var minScaleX = (width - scale9Grid.width) / width;
+			var minScaleY = (height - scale9Grid.height) / height;
+
+			var fx = Math.min(1.0, minScaleX / scaleX);
+			var fy = Math.min(1.0, minScaleY / scaleY);
+
+			bounds.x = boundsExStroke.x + left * fx;
+			bounds.y = boundsExStroke.y + top * fy;
+			bounds.width = boundsExStroke.width + (right - left) * fx;
+			bounds.height = boundsExStroke.height + (bottom - top) * fy;
+		}
+
+		result.bounds.copyFrom(bounds);
+		result.boundsExStroke.copyFrom(boundsExStroke);
 	}
 }
 
@@ -2768,6 +2788,12 @@ typedef CubicExtrema =
 {
 	var min:Float;
 	var max:Float;
+}
+
+typedef GraphicsBounds =
+{
+	var bounds:Rectangle;
+	var boundsExStroke:Rectangle;
 }
 #else
 typedef Graphics = flash.display.Graphics;

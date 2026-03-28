@@ -10,6 +10,7 @@ import openfl.display.BitmapData;
 import openfl.display.GraphicsShader;
 import openfl.display.ShaderInput;
 import openfl.display.ShaderParameter;
+import openfl.utils.ObjectPool;
 
 #if !openfl_debug
 @:fileXml('tags="haxe,release"')
@@ -51,6 +52,8 @@ class ShaderBuffer
 	public var paramRefs_Int:Array<ShaderParameter<Int>>;
 	public var paramTypes:Array<Int>;
 	public var shader:GraphicsShader;
+
+	private static var __pool:ObjectPool<ShaderBuffer> = new ObjectPool<ShaderBuffer>(function() return new ShaderBuffer());
 
 	public function new()
 	{

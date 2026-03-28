@@ -30,7 +30,7 @@ class PolyTools
 
 	static public var zero:HxPoint = new HxPoint(0, 0);
 
-	static public var EPSILON:Float = .00000001;
+	static public inline var EPSILON:Float = 1e-8;
 
 	/** Returns true if `poly` is counterclockwise (assumes y axis pointing down). */
 	static public function isCCW(poly:Poly):Bool

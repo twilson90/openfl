@@ -913,7 +913,7 @@ class CanvasGraphics
 
 					hasFillStyle = true;
 
-					if (c.shaderBuffer.inputCount > 0 && shaderBuffer.inputs[0].readable && !hitTesting && !masking)
+					if (shaderBuffer.inputs[0] != null && shaderBuffer.inputs[0].readable && !hitTesting && !masking)
 					{
 						fillBitmap = shaderBuffer.inputs[0];
 						fillPattern = createImagePattern(fillBitmap, shaderBuffer.inputWrap[0] != CLAMP, shaderBuffer.inputFilter[0] != NEAREST);
@@ -1576,8 +1576,8 @@ class CanvasGraphics
 
 		if (graphics.__useScale9Grid)
 		{
-			x *= graphics.__owner.scaleX;
-			y *= graphics.__owner.scaleY;
+			x *= graphics.__owner.__scaleX;
+			y *= graphics.__owner.__scaleY;
 		}
 
 		var cacheCanvas = graphics.__canvas;

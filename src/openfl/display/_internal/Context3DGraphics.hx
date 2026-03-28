@@ -3,18 +3,19 @@ package openfl.display._internal;
 #if !flash
 import haxe.ds.IntMap;
 import haxe.ds.StringMap;
+import haxe.io.Bytes;
 import openfl.display.BitmapData;
 import openfl.display.CapsStyle;
 import openfl.display.Graphics;
 import openfl.display.JointStyle;
 import openfl.display.LineScaleMode;
 import openfl.display.OpenGLRenderer;
-import openfl.display._internal.CairoGraphics;
-import openfl.display._internal.CanvasGraphics;
-import openfl.display._internal.DrawCommandReader;
-import openfl.display._internal.geom.Tesselator;
 import openfl.display._internal.geom.PolyLineTesselator;
+import openfl.display._internal.geom.Tesselator;
 import openfl.display3D.Context3D;
+import openfl.display3D.Context3DClearMask;
+import openfl.display3D.IndexBuffer3D;
+import openfl.display3D.VertexBuffer3D;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Point;
@@ -23,7 +24,6 @@ import openfl.utils.ArrayUtil;
 import openfl.utils.ColorUtil;
 import openfl.utils.ObjectPool;
 import openfl.utils._internal.Float32Array;
-import openfl.utils._internal.UInt16Array;
 import openfl.utils._internal.UInt32Array;
 #if lime
 import lime.math.ARGB;
@@ -46,6 +46,8 @@ import openfl.display._internal.stats.DrawCallContext;
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.display._internal.DrawContext)
+@:access(openfl.display._internal.Context3DBatchBuffer)
+@:access(openfl.display._internal.Gradient)
 @:access(openfl.display._internal.Contour)
 @:access(openfl.display._internal.Fill)
 @:access(openfl.display._internal.FillContext)
@@ -56,7 +58,7 @@ class Context3DGraphics
 {
 	private static var DATA_PER_VERTEX:Int = 6;
 	private static var KAPPA:Float = 0.552284749831; // 4*(√2-1)/3
-	public static inline var EPS:Float = 1e-6;
+	private static inline var EPSILON:Float = 1e-6;
 
 	private static var blankBitmapData = new BitmapData(1, 1, true, 0xffffffff);
 	private static var maskRender:Bool;
@@ -65,32 +67,40 @@ class Context3DGraphics
 	private static var tempScale9VerticesVector:Vector<Float> = new Vector<Float>();
 	private static var tempIndicesVector:Vector<Int> = new Vector<Int>();
 	private static var tempUvtVector:Vector<Float> = new Vector<Float>();
+	private static var fillTess:Tesselator = new Tesselator();
+	private static var lineTess:PolyLineTesselator = new PolyLineTesselator();
 
 	private static var graphics:Graphics;
-	private static var renderer:OpenGLRenderer;
-	private static var context:Context3D;
-
-	private static var shaderBuffer:ShaderBuffer;
-	private static var shaderBufferOffset:Int;
-	private static var vertexIndexPosition:Int;
-	private static var vertexBufferPosition:Int;
-	private static var indexBufferPosition:Int;
+	private static var buffer:Context3DBatchBuffer;
 
 	private static function buildDrawTrianglesBuffer(vertices:Vector<Float>, indices:Vector<Int> = null, uvtData:Vector<Float> = null, fill:Fill,
-			triCulling:TriangleCulling = NONE):Void
+			triCulling:TriangleCulling = NONE, isStroke:Bool = false):Void
 	{
 		var numVertices = Std.int(vertices.length / 2);
 		if (numVertices < 3) return;
 
-		if (fill.bitmap != null && uvtData == null)
+		if (uvtData == null)
 		{
-			uvtData = tempUvtVector;
-			graphics.__generateUV(vertices, fill.bitmap.width, fill.bitmap.height, fill.matrix, uvtData);
+			if (fill.bitmap != null)
+			{
+				uvtData = tempUvtVector;
+				graphics.__generateUV(vertices, fill.bitmap.width, fill.bitmap.height, fill.matrix, uvtData);
+			}
+			else if (fill.shaderBuffer != null)
+			{
+				uvtData = tempUvtVector;
+				graphics.__generateUV(vertices, 1, 1, fill.matrix, uvtData);
+			}
+			else if (fill.gradient != null)
+			{
+				uvtData = tempUvtVector;
+				graphics.__generateUV(vertices, 819.2, 819.2, fill.matrix, uvtData);
+			}
 		}
-		if (fill.gradient != null && uvtData == null)
+
+		if (/* !isStroke &&  */ graphics.__useScale9Grid)
 		{
-			uvtData = tempUvtVector;
-			graphics.__generateUV(vertices, 819.2, 819.2, fill.matrix, uvtData);
+			vertices = applyScale9Grid(vertices);
 		}
 
 		if (indices == null)
@@ -102,93 +112,30 @@ class Context3DGraphics
 			}
 		}
 
-		var length = indices.length;
-		var triCount = Std.int(length / 3);
-		var numIndices:Int;
+		buffer.append(vertices, indices, uvtData, triCulling, fill, isStroke);
+	}
 
-		var hasUVData = (uvtData != null);
-		var hasUVTData = (hasUVData && uvtData.length >= (numVertices * 3));
-		var uvStride = hasUVTData ? 3 : 2;
+	public static function applyScale9Grid(vertices:Vector<Float>):Vector<Float>
+	{
+		tempScale9VerticesVector.length = vertices.length;
+		var minX = graphics.__boundsExStroke.x;
+		var minY = graphics.__boundsExStroke.y;
+		var scaledMinX = graphics.__getScale9GridPositionX(minX);
+		var scaledMinY = graphics.__getScale9GridPositionY(minY);
+		var x:Float, y:Float, scaledX:Float, scaledY:Float;
 
-		var offset:Int;
-		var vertOffset:Int;
-		var uvOffset:Int;
-
-		if (graphics.__useScale9Grid)
-		{
-			tempScale9VerticesVector.length = vertices.length;
-			var minX = graphics.__boundsExStroke.x;
-			var minY = graphics.__boundsExStroke.y;
-			var scaledMinX = graphics.__getScale9GridPositionX(minX);
-			var scaledMinY = graphics.__getScale9GridPositionY(minY);
-			var x:Float, y:Float, scaledX:Float, scaledY:Float;
-
-			for (i in 0...numVertices)
-			{
-				vertOffset = i * 2;
-				x = vertices[vertOffset];
-				y = vertices[vertOffset + 1];
-				scaledX = graphics.__getScale9GridPositionX(x);
-				scaledY = graphics.__getScale9GridPositionY(y);
-				tempScale9VerticesVector[vertOffset] = (scaledX - scaledMinX) / graphics.__owner.scaleX + minX;
-				tempScale9VerticesVector[vertOffset + 1] = (scaledY - scaledMinY) / graphics.__owner.scaleY + minY;
-			}
-			vertices = tempScale9VerticesVector;
-		}
-
-		var minX = Math.POSITIVE_INFINITY;
-		var minY = Math.POSITIVE_INFINITY;
-		var maxX = Math.NEGATIVE_INFINITY;
-		var maxY = Math.NEGATIVE_INFINITY;
-		var color = ColorUtil.argbToGL(fill.color);
-
-		resizeVertexBuffer(vertexBufferPosition + (numVertices * DATA_PER_VERTEX));
+		var numVertices = Std.int(vertices.length / 2);
 		for (i in 0...numVertices)
 		{
-			offset = vertexBufferPosition + (i * DATA_PER_VERTEX);
-			vertOffset = i * 2;
-			uvOffset = i * uvStride;
-
-			var x = vertices[vertOffset];
-			var y = vertices[vertOffset + 1];
-			var t = 1.0;
-
-			if (hasUVTData)
-			{
-				t = uvtData[uvOffset + 2];
-				x /= t;
-				y /= t;
-			}
-
-			graphics.__vertexBufferData[offset] = x;
-			graphics.__vertexBufferData[offset + 1] = y;
-			graphics.__vertexBufferData[offset + 2] = hasUVData ? uvtData[uvOffset] : 0;
-			graphics.__vertexBufferData[offset + 3] = hasUVData ? uvtData[uvOffset + 1] : 0;
-			graphics.__vertexBufferData[offset + 4] = t;
-			graphics.__vertexBufferDataInt[offset + 5] = color;
-
-			if (x < minX) minX = x;
-			if (y < minY) minY = y;
-			if (x > maxX) maxX = x;
-			if (y > maxY) maxY = y;
+			var vertOffset = i * 2;
+			x = vertices[vertOffset];
+			y = vertices[vertOffset + 1];
+			scaledX = graphics.__getScale9GridPositionX(x);
+			scaledY = graphics.__getScale9GridPositionY(y);
+			tempScale9VerticesVector[vertOffset] = (scaledX - scaledMinX) / graphics.__owner.__scaleX + minX;
+			tempScale9VerticesVector[vertOffset + 1] = (scaledY - scaledMinY) / graphics.__owner.__scaleY + minY;
 		}
-
-		var rect = Rectangle.__pool.get();
-		rect.setTo(minX, minY, maxX - minX, maxY - minY);
-
-		numIndices = length;
-		resizeIndexBuffer(indexBufferPosition + numIndices);
-		for (i in 0...length)
-		{
-			graphics.__indexBufferData[indexBufferPosition + i] = vertexIndexPosition + indices[i];
-		}
-
-		vertexIndexPosition += numVertices;
-		vertexBufferPosition += numVertices * DATA_PER_VERTEX;
-		indexBufferPosition += numIndices;
-
-		graphics.__batchBuffer.append(numIndices, numVertices, triCulling, fill, rect);
-		Rectangle.__pool.release(rect);
+		return tempScale9VerticesVector;
 	}
 
 	public static inline function buildDrawQuadsBuffer(rects:Vector<Float>, indices:Vector<Int>, transforms:Vector<Float>, fill:Fill):Void
@@ -359,23 +306,19 @@ class Context3DGraphics
 
 	private static inline function buildBuffer():Void
 	{
-		vertexIndexPosition = 0;
-		vertexBufferPosition = 0;
-		indexBufferPosition = 0;
-
 		var data = DrawCommandReader.__pool.get();
 		data.reset(graphics.__commands);
 
 		var ctx = DrawContext.__pool.get();
 
-		if (graphics.__batchBuffer == null)
+		if (graphics.__buffer == null)
 		{
-			graphics.__batchBuffer = new Context3DBatchBuffer();
+			graphics.__buffer = Context3DBatchBuffer.__pool.get();
 		}
-		else
-		{
-			graphics.__batchBuffer.reset();
-		}
+
+		graphics.__buffer.reset(DATA_PER_VERTEX);
+
+		Context3DGraphics.buffer = graphics.__buffer;
 
 		var matrix = graphics.__owner.__worldTransform;
 		var scaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
@@ -441,8 +384,8 @@ class Context3DGraphics
 					}
 					else
 					{
-						ctx.fill.fill.gradient = new Gradient(c.colors, c.alphas, c.ratios, null, c.type, c.interpolationMethod, c.spreadMethod,
-							c.focalPointRatio);
+						if (ctx.fill.fill.gradient == null) ctx.fill.fill.gradient = Gradient.__pool.get();
+						ctx.fill.fill.gradient.setTo(c.colors, c.alphas, c.ratios, null, c.type, c.interpolationMethod, c.spreadMethod, c.focalPointRatio);
 						ctx.fill.fill.matrix = c.matrix;
 					}
 
@@ -474,6 +417,7 @@ class Context3DGraphics
 					{
 						if (shaderBuffer != null)
 						{
+							ctx.fill.fill.shaderBuffer = shaderBuffer;
 							for (i in 0...shaderBuffer.inputCount)
 							{
 								if (shaderBuffer.inputRefs[i].name == "bitmap")
@@ -526,8 +470,8 @@ class Context3DGraphics
 					if (!maskRender)
 					{
 						ctx.stroke.fill.identity();
-						ctx.stroke.fill.gradient = new Gradient(c.colors, c.alphas, c.ratios, null, c.type, c.interpolationMethod, c.spreadMethod,
-							c.focalPointRatio);
+						ctx.stroke.fill.gradient = Gradient.__pool.get();
+						ctx.stroke.fill.gradient.setTo(c.colors, c.alphas, c.ratios, null, c.type, c.interpolationMethod, c.spreadMethod, c.focalPointRatio);
 						ctx.stroke.fill.matrix = c.matrix;
 					}
 
@@ -631,71 +575,40 @@ class Context3DGraphics
 
 		buildDrawContext(ctx);
 		DrawContext.__pool.release(ctx);
-
-		if (indexBufferPosition > 0)
-		{
-			var buffer = graphics.__indexBuffer;
-
-			if (buffer == null || indexBufferPosition > graphics.__indexBufferCount)
-			{
-				if (buffer != null) buffer.dispose();
-				buffer = context.createIndexBuffer(indexBufferPosition, DYNAMIC_DRAW);
-				graphics.__indexBuffer = buffer;
-				graphics.__indexBufferCount = indexBufferPosition;
-			}
-
-			buffer.uploadFromTypedArray(graphics.__indexBufferData);
-		}
-
-		if (vertexBufferPosition > 0)
-		{
-			var buffer = graphics.__vertexBuffer;
-
-			if (buffer == null || vertexBufferPosition > graphics.__vertexBufferCount)
-			{
-				if (buffer != null) buffer.dispose();
-				buffer = context.createVertexBuffer(vertexBufferPosition, DATA_PER_VERTEX, DYNAMIC_DRAW);
-				graphics.__vertexBuffer = buffer;
-				graphics.__vertexBufferCount = vertexBufferPosition;
-			}
-
-			buffer.uploadFromTypedArray(graphics.__vertexBufferData);
-		}
 	}
 
-	public static function buildDrawContext(ctx:DrawContext):Void
+	private static function buildDrawContext(ctx:DrawContext):Void
 	{
 		ctx.preBuild();
 
-		if (ctx.hasFill)
+		for (fill in ctx.fills)
 		{
-			for (fill in ctx.fills)
+			for (contour in fill.contours)
 			{
-				var tess = new Tesselator();
-				for (contour in fill.contours)
-				{
-					tess.addContour(2, contour.points);
-				}
-				var windingRule:WindingRule = switch (ctx.windingRule)
-				{
-					case EVENODD: WindingRule.ODD;
-					case NONZERO: WindingRule.NON_ZERO;
-				}
-				tess.tesselate(windingRule, POLYGONS);
-				buildDrawTrianglesBuffer(tess.vertices, tess.elements, null, fill.fill);
+				fillTess.addContour(2, contour.points);
 			}
+			var windingRule:WindingRule = switch (ctx.windingRule)
+			{
+				case EVENODD: WindingRule.ODD;
+				case NONZERO: WindingRule.NON_ZERO;
+			}
+			fillTess.tesselate(windingRule, POLYGONS);
+			buildDrawTrianglesBuffer(fillTess.vertices, fillTess.elements, null, fill.fill);
+			fillTess.reset();
 		}
 
-		if (ctx.hasStroke)
+		for (stroke in ctx.strokes)
 		{
-			for (stroke in ctx.strokes)
+			if (stroke.fill.color == 0 || stroke.thickness == null) continue;
+			for (contour in stroke.contours)
 			{
-				for (contour in stroke.contours)
-				{
-					var tess = new PolyLineTesselator(ctx.curveTolerance);
-					tess.tesselate(contour.points, contour.closed, stroke.thickness, stroke.joints, stroke.caps, stroke.miterLimit, stroke.scaleMode);
-					buildDrawTrianglesBuffer(tess.vertices, tess.indices, null, stroke.fill);
-				}
+				var closed = contour.closed;
+				lineTess.curveTolerance = ctx.curveTolerance;
+				var points = contour.points;
+				lineTess.addPoints(points, contour.curve);
+				lineTess.tesselate(closed, stroke.thickness, stroke.joints, stroke.caps, stroke.miterLimit, stroke.scaleMode);
+				buildDrawTrianglesBuffer(lineTess.vertices, lineTess.indices, null, stroke.fill, NONE, true);
+				lineTess.reset();
 			}
 		}
 
@@ -751,166 +664,263 @@ class Context3DGraphics
 			var width = graphics.__width;
 			var height = graphics.__height;
 
-			Context3DGraphics.graphics = graphics;
-			Context3DGraphics.renderer = renderer;
-			context = renderer.__context3D;
-
 			if (!bounds.isEmpty() && width >= 1 && height >= 1)
 			{
+				Context3DGraphics.graphics = graphics;
+				Context3DGraphics.buffer = graphics.__buffer;
+				var context = renderer.__context3D;
+
 				if (graphics.__hardwareDirty)
 				{
 					buildBuffer();
-					if (graphics.__wireframeIndexBuffer != null) graphics.__wireframeIndexBuffer.dispose();
-					graphics.__wireframeIndexBuffer = null;
+					if (buffer.wireframeIndexBuffer != null)
+					{
+						buffer.wireframeIndexBuffer.dispose();
+						buffer.wireframeIndexBuffer = null;
+					}
 					graphics.__hardwareDirty = false;
 				}
 
-				if (graphics.__wireframe && graphics.__wireframeIndexBuffer == null)
+				buffer.flush(context);
+
+				if (graphics.__wireframe && buffer.wireframeIndexBuffer == null)
 				{
-					var numIndices = indexBufferPosition;
-					var triCount = Std.int(numIndices / 3);
-					var triBufferData = graphics.__indexBufferData;
-					var bufferData = new UInt16Array(triCount * 6);
-					for (i in 0...triCount)
-					{
-						var i0 = triBufferData[i * 3];
-						var i1 = triBufferData[i * 3 + 1];
-						var i2 = triBufferData[i * 3 + 2];
-						var offset = i * 6;
-
-						// push 3 edges per triangle
-						bufferData[offset] = i0;
-						bufferData[offset + 1] = i1;
-
-						bufferData[offset + 2] = i1;
-						bufferData[offset + 3] = i2;
-
-						bufferData[offset + 4] = i2;
-						bufferData[offset + 5] = i0;
-					}
-					graphics.__wireframeIndexBuffer = context.createIndexBuffer(indexBufferPosition, DYNAMIC_DRAW);
-					graphics.__wireframeIndexBuffer.uploadFromTypedArray(bufferData);
+					buffer.prepareWireFrameBuffer();
 				}
 
-				var numBatches = graphics.__batchBuffer.length;
-				var vertexOffset = 0;
-				var indexOffset = 0;
-				for (i in 0...numBatches)
+				var numBatches = buffer.length;
+
+				if (numBatches > 0)
 				{
-					var numIndices = graphics.__batchBuffer.numIndices[i];
-					var numVertices = graphics.__batchBuffer.numVertices[i];
-					var triCulling = graphics.__batchBuffer.culling[i];
-					var fill = graphics.__batchBuffer.fill[i];
+					var indexOffset = 0;
+					var strokeIndexOffset = 0;
+					var shaderBufferOffset = 0;
+					var stencilBase = renderer.__stencilReference;
 
-					var bitmap = fill.bitmap;
-					var bitmapSmooth = fill.bitmapSmooth;
-					var bitmapRepeat = fill.bitmapRepeat;
-					var gradient = fill.gradient;
+					var renderTransform = Matrix.__pool.get();
+					renderTransform.copyFrom(graphics.__owner.__renderTransform);
+					renderTransform.translate(graphics.__renderTransform.tx, graphics.__renderTransform.ty);
+					var uMatrix = renderer.__getMatrix(renderTransform, NEVER);
 
-					var uMatrix = renderer.__getMatrix(graphics.__owner.__renderTransform, AUTO);
-					var shader:Shader;
-
-					if (maskRender)
+					for (i in 0...numBatches)
 					{
-						shader = renderer.__maskShader;
-						renderer.setShader(renderer.__maskShader);
-						renderer.applyMatrix(uMatrix);
-						// renderer.applyBitmapData(blankBitmapData, false, false);
-						renderer.updateShader();
+						var numIndices = buffer.numIndices[i];
+						var numVertices = buffer.numVertices[i];
+						var triCulling = buffer.culling[i];
+						var fill = buffer.fill[i];
+						var isTransparentStroke = buffer.isTransparentStroke[i];
+
+						var bitmap = fill.bitmap;
+						var bitmapSmooth = fill.bitmapSmooth;
+						var bitmapRepeat = fill.bitmapRepeat;
+						var gradient = fill.gradient;
+						var shaderBuffer = fill.shaderBuffer;
+
+						if (maskRender)
+						{
+							renderer.setShader(renderer.__maskShader);
+							renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
+							renderer.applyMatrix(uMatrix);
+							renderer.updateShader();
+
+							drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+						}
+						else
+						{
+							if (isTransparentStroke)
+							{
+								if (renderer.__stencilReference == 0)
+								{
+									context.clear(0, 0, 0, 0, 0, 0, Context3DClearMask.STENCIL);
+								}
+
+								context.setColorMask(false, false, false, false);
+								context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0xFF);
+								context.setStencilActions(FRONT_AND_BACK, EQUAL, INCREMENT_SATURATE, KEEP, KEEP);
+
+								renderer.__stencilReference++;
+
+								renderer.setShader(renderer.__maskShader);
+								renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
+								renderer.applyMatrix(uMatrix);
+								renderer.updateShader();
+
+								drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+
+								context.setColorMask(true, true, true, true);
+								context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0);
+								context.setStencilActions(FRONT_AND_BACK, EQUAL, KEEP, KEEP, KEEP);
+							}
+
+							var shader:Shader = renderer.__defaultGraphicsShader;
+							if (shaderBuffer != null)
+							{
+								shader = renderer.__initShaderBuffer(shaderBuffer);
+								renderer.__setShaderBuffer(shaderBuffer);
+								renderer.applyGraphicsFillType(4);
+								renderer.applyMatrix(uMatrix);
+								if (bitmap != null)
+								{
+									renderer.applyBitmapData(bitmap, bitmapSmooth, bitmapRepeat);
+								}
+								renderer.applyAlpha(graphics.__owner.__worldAlpha);
+								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.__updateShaderBuffer(shaderBufferOffset);
+								// needed if any uniform parameters have changed.
+								// TODO: check if shaderBuffer is dirty and only update it if so.
+								shaderBuffer.update(cast shader);
+							}
+							else if (bitmap != null)
+							{
+								renderer.setShader(shader);
+								renderer.applyGraphicsFillType(1);
+								renderer.applyMatrix(uMatrix);
+								renderer.applyBitmapData(bitmap, bitmapSmooth, bitmapRepeat);
+								renderer.applyAlpha(graphics.__owner.__worldAlpha);
+								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.updateShader();
+							}
+							else if (gradient != null)
+							{
+								renderer.setShader(shader);
+								renderer.applyGradient(gradient);
+								renderer.applyMatrix(uMatrix);
+								renderer.applyAlpha(graphics.__owner.__worldAlpha);
+								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.updateShader();
+							}
+							else
+							{
+								renderer.setShader(shader);
+								renderer.applyGraphicsFillType(0);
+								renderer.applyMatrix(uMatrix);
+								renderer.applyAlpha(graphics.__owner.__worldAlpha);
+								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.updateShader();
+							}
+
+							// drawElements(context, shader, buffer, indexOffset, numIndices, triCulling);
+
+							if (isTransparentStroke)
+							{
+								// draw a quad that encompasses the stroke so we can apply the stencil to it.
+								drawTransparentStroke(context, shader, buffer, strokeIndexOffset, 6, triCulling);
+								strokeIndexOffset += 6;
+
+								if (renderer.__stencilReference > 1)
+								{
+									context.setStencilActions(FRONT_AND_BACK, EQUAL, DECREMENT_SATURATE, DECREMENT_SATURATE, KEEP);
+									context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0xFF);
+									context.setColorMask(false, false, false, false);
+
+									drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+									renderer.__stencilReference--;
+
+									context.setStencilActions(FRONT_AND_BACK, EQUAL, KEEP, KEEP, KEEP);
+									context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0);
+									context.setColorMask(true, true, true, true);
+								}
+								else
+								{
+									renderer.__stencilReference = 0;
+									context.setStencilActions();
+									context.setStencilReferenceValue(0, 0, 0);
+								}
+							}
+							else
+							{
+								drawElements(context, shader, buffer, indexOffset, numIndices, triCulling);
+							}
+						}
+
+						renderer.__clearShader();
+
+						// shaderBufferOffset += numIndices;
+						shaderBufferOffset += numVertices;
+						indexOffset += numIndices;
 					}
-					else if (shaderBuffer != null)
-					{
-						shader = renderer.__initShaderBuffer(shaderBuffer);
-						renderer.__setShaderBuffer(shaderBuffer);
-						renderer.applyMatrix(uMatrix);
-						renderer.applyBitmapData(bitmap, false, bitmapRepeat);
-						renderer.applyAlpha(1);
-						renderer.applyColorTransform(null);
-						renderer.__updateShaderBuffer(shaderBufferOffset);
-					}
-					else if (bitmap != null)
-					{
-						shader = renderer.__defaultGraphicsShader;
-						renderer.setShader(shader);
-						renderer.applyGraphicsFillType(1);
-						renderer.applyMatrix(uMatrix);
-						renderer.applyBitmapData(bitmap, bitmapSmooth, bitmapRepeat);
-						renderer.applyAlpha(graphics.__owner.__worldAlpha);
-						renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
-						renderer.updateShader();
-					}
-					else if (gradient != null)
-					{
-						shader = renderer.__defaultGraphicsShader;
-						renderer.setShader(shader);
-						renderer.applyGradient(gradient);
-						renderer.applyMatrix(uMatrix);
-						renderer.applyAlpha(graphics.__owner.__worldAlpha);
-						renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
-						renderer.updateShader();
-					}
-					else
-					{
-						shader = renderer.__defaultGraphicsShader;
-						renderer.setShader(shader);
-						renderer.applyGraphicsFillType(0);
-						renderer.applyMatrix(uMatrix);
-						renderer.applyAlpha(graphics.__owner.__worldAlpha);
-						renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
-						renderer.updateShader();
-					}
-
-					if (shader.__position != null) context.setVertexBufferAt(shader.__position.index, graphics.__vertexBuffer, 0, FLOAT_2);
-					if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, graphics.__vertexBuffer, 2, FLOAT_3);
-					if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, graphics.__vertexBuffer, 5, BYTES_4);
-
-					switch (triCulling)
-					{
-						case POSITIVE:
-							context.setCulling(FRONT);
-
-						case NEGATIVE:
-							context.setCulling(BACK);
-
-						case NONE:
-							context.setCulling(NONE);
-
-						default:
-					}
-
-					if (graphics.__wireframe)
-					{
-						context.drawLines(graphics.__wireframeIndexBuffer, indexOffset, numIndices * 2);
-					}
-					else
-					{
-						context.drawTriangles(graphics.__indexBuffer, indexOffset, Std.int(numIndices / 3));
-					}
-
-					// This code is here because other draw calls are not aware (currently) of the culling type and just generally expect it to use
-					// back face culling by default
-					switch (triCulling)
-					{
-						case POSITIVE, NONE:
-							context.setCulling(BACK);
-
-						default:
-					}
-
-					#if gl_stats
-					Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-					graphics.__glDrawCalls++;
-					#end
-
-					renderer.__clearShader();
-
-					shaderBufferOffset += numVertices;
-					vertexOffset += numVertices * DATA_PER_VERTEX;
-					indexOffset += numIndices;
+					Matrix.__pool.release(renderTransform);
 				}
 			}
 
 			graphics.__dirty = false;
+		}
+	}
+
+	private static function drawTransparentStroke(context:Context3D, shader:Shader, buffer:Context3DBatchBuffer, indexOffset:Int, numIndices:Int,
+			triCulling:TriangleCulling):Void
+	{
+		if (shader.__position != null) context.setVertexBufferAt(shader.__position.index, buffer.strokeVertexBuffer, 0, FLOAT_2);
+		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.strokeVertexBuffer, 2, FLOAT_3);
+		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.strokeVertexBuffer, 5, BYTES_4);
+
+		switch (triCulling)
+		{
+			case POSITIVE:
+				context.setCulling(FRONT);
+
+			case NEGATIVE:
+				context.setCulling(BACK);
+
+			case NONE:
+				context.setCulling(NONE);
+		}
+
+		context.drawTriangles(buffer.strokeIndexBuffer, indexOffset, Std.int(numIndices / 3));
+
+		#if gl_stats
+		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+		graphics.__glDrawCalls++;
+		#end
+
+		switch (triCulling)
+		{
+			case POSITIVE, NONE:
+				context.setCulling(BACK);
+
+			default:
+		}
+	}
+
+	private static function drawElements(context:Context3D, shader:Shader, buffer:Context3DBatchBuffer, indexOffset:Int, numIndices:Int,
+			triCulling:TriangleCulling):Void
+	{
+		if (shader.__position != null) context.setVertexBufferAt(shader.__position.index, buffer.vertexBuffer, 0, FLOAT_2);
+		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.vertexBuffer, 2, FLOAT_3);
+		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.vertexBuffer, 5, BYTES_4);
+
+		switch (triCulling)
+		{
+			case POSITIVE:
+				context.setCulling(FRONT);
+
+			case NEGATIVE:
+				context.setCulling(BACK);
+
+			case NONE:
+				context.setCulling(NONE);
+		}
+
+		if (graphics.__wireframe)
+		{
+			context.drawLines(buffer.wireframeIndexBuffer, indexOffset * 2, numIndices);
+		}
+		else
+		{
+			context.drawTriangles(buffer.indexBuffer, indexOffset, Std.int(numIndices / 3));
+		}
+
+		#if gl_stats
+		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+		graphics.__glDrawCalls++;
+		#end
+
+		switch (triCulling)
+		{
+			case POSITIVE, NONE:
+				context.setCulling(BACK);
+
+			default:
 		}
 	}
 
@@ -921,13 +931,20 @@ class Context3DGraphics
 		maskRender = false;
 	}
 
-	public static function hitTest(graphics:Graphics, x:Float, y:Float):Bool
+	public static function hitTest(graphics:Graphics, px:Float, py:Float):Bool
 	{
 		if (graphics.__commands.length == 0) return false;
 
+		if (!graphics.__isHardwareCompatible)
+		{
+			#if (js && html5)
+			return CanvasGraphics.hitTest(graphics, px, py);
+			#elseif (lime_cffi)
+			return CairoGraphics.hitTest(graphics, px, py);
+			#end
+		}
+
 		Context3DGraphics.graphics = graphics;
-		Context3DGraphics.renderer = renderer;
-		context = renderer.__context3D;
 
 		var bounds = graphics.__bounds;
 		var width = graphics.__width;
@@ -940,209 +957,10 @@ class Context3DGraphics
 				buildBuffer();
 				graphics.__hardwareDirty = false;
 			}
+
+			return graphics.__buffer.hitTest(px, py);
 		}
-
-		var px = x;
-		var py = y;
-
-		// if (graphics.__useScale9Grid)
-		// {
-		// 	px *= graphics.__owner.scaleX;
-		// 	py *= graphics.__owner.scaleY;
-		// }
-
-		var vertexBuffer = graphics.__vertexBufferData;
-		var indexBuffer = graphics.__indexBufferData;
-		var numBatches = graphics.__batchBuffer.length;
-		var indexOffset = 0;
-		for (i in 0...numBatches)
-		{
-			var bounds = graphics.__batchBuffer.bounds[i];
-			if (!bounds.contains(px, py)) continue;
-
-			var numIndices = graphics.__batchBuffer.numIndices[i];
-			var numTris = Std.int(numIndices / 3);
-			for (j in 0...numTris)
-			{
-				var base = indexOffset + j * 3;
-				var i0 = indexBuffer[base];
-				var i1 = indexBuffer[base + 1];
-				var i2 = indexBuffer[base + 2];
-				var x0 = vertexBuffer[i0 * DATA_PER_VERTEX];
-				var y0 = vertexBuffer[i0 * DATA_PER_VERTEX + 1];
-				var x1 = vertexBuffer[i1 * DATA_PER_VERTEX];
-				var y1 = vertexBuffer[i1 * DATA_PER_VERTEX + 1];
-				var x2 = vertexBuffer[i2 * DATA_PER_VERTEX];
-				var y2 = vertexBuffer[i2 * DATA_PER_VERTEX + 1];
-				if (pointInTriangle(px, py, x0, y0, x1, y1, x2, y2))
-				{
-					return true;
-				}
-			}
-			indexOffset += numIndices;
-		}
-
 		return false;
-	}
-
-	public static inline function cross(ax:Float, ay:Float, bx:Float, by:Float, cx:Float, cy:Float):Float
-	{
-		return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-	}
-
-	public static inline function pointInTriangle(px:Float, py:Float, ax:Float, ay:Float, bx:Float, by:Float, cx:Float, cy:Float):Bool
-	{
-		var c1 = cross(ax, ay, bx, by, px, py);
-		var c2 = cross(bx, by, cx, cy, px, py);
-		var c3 = cross(cx, cy, ax, ay, px, py);
-		return (c1 >= -EPS && c2 >= -EPS && c3 >= -EPS);
-	}
-
-	private static function resizeVertexBuffer(length:Int)
-	{
-		var buffer = graphics.__vertexBufferData;
-		var newBuffer:Float32Array;
-		#if lime
-		if (buffer == null)
-		{
-			newBuffer = new Float32Array(length);
-		}
-		else if (length > buffer.length)
-		{
-			newBuffer = new Float32Array(length * 2);
-			newBuffer.set(buffer);
-		}
-		else
-		{
-			return;
-		}
-		graphics.__vertexBufferData = newBuffer;
-		graphics.__vertexBufferDataInt = new UInt32Array(newBuffer.buffer);
-		#end
-	}
-
-	private static function resizeIndexBuffer(length:Int)
-	{
-		var buffer = graphics.__indexBufferData;
-		var newBuffer:UInt16Array;
-		#if lime
-		if (buffer == null)
-		{
-			newBuffer = new UInt16Array(length);
-		}
-		else if (length > buffer.length)
-		{
-			newBuffer = new UInt16Array(length * 2);
-			newBuffer.set(buffer);
-		}
-		else
-		{
-			return;
-		}
-		graphics.__indexBufferData = newBuffer;
-		#end
-	}
-
-	private static function toScale9Position(pos:Float, scale9Start:Float, scale9Center:Float, unscaledSize:Float, scale:Float):Float
-	{
-		if (scale <= 0.0)
-		{
-			// doesn't render if scaled with negative value
-			return 0.0;
-		}
-		var scale9End = unscaledSize - scale9Center - scale9Start;
-		var size = unscaledSize * scale;
-		var center = size - scale9Start - scale9End;
-		if (pos <= scale9Start)
-		{
-			// start region
-			if (center < 0.0)
-			{
-				return pos * (scale9Start + scale9End + center) / (scale9Start + scale9End);
-			}
-			return pos;
-		}
-		if (pos >= (scale9Start + scale9Center))
-		{
-			// end region
-			if (center < 0.0)
-			{
-				return (scale9Start + (pos - scale9Start - scale9Center)) * (scale9Start + scale9End + center) / (scale9Start + scale9End);
-			}
-			return scale9Start + center + (pos - scale9Start - scale9Center);
-		}
-		// center region
-		if (center < 0.0)
-		{
-			return scale9Start * (scale9Start + scale9End + center) / (scale9Start + scale9End);
-		}
-		return scale9Start + center * (pos - scale9Start) / scale9Center;
-	}
-}
-
-@:access(openfl.display._internal.Gradient)
-class Fill
-{
-	public var color:Null<Int>;
-	public var bitmap:BitmapData;
-	public var bitmapSmooth:Bool;
-	public var bitmapRepeat:Bool;
-	public var matrix:Matrix;
-	public var hasFill(get, never):Bool;
-	public var gradient:Gradient;
-
-	private static var __pool:ObjectPool<Fill> = new ObjectPool<Fill>(() -> new Fill(), (c) -> c.identity());
-
-	public function new() {}
-
-	public inline function get_hasFill():Bool
-	{
-		return gradient != null || color != null || bitmap != null;
-	}
-
-	public function identity()
-	{
-		color = 0;
-		bitmap = null;
-		bitmapSmooth = false;
-		bitmapRepeat = false;
-		gradient = null;
-		matrix = null;
-	}
-
-	public function copyFrom(other:Fill)
-	{
-		color = other.color;
-		bitmap = other.bitmap;
-		bitmapSmooth = other.bitmapSmooth;
-		bitmapRepeat = other.bitmapRepeat;
-		gradient = other.gradient;
-		matrix = other.matrix;
-	}
-
-	public function equals(other:Fill)
-	{
-		return color == other.color
-			&& matrix.equals(other.matrix)
-			&& bitmap == other.bitmap
-			&& bitmapSmooth == other.bitmapSmooth
-			&& bitmapRepeat == other.bitmapRepeat
-			&& gradientEquals(gradient, other.gradient);
-	}
-
-	public function isBatchable(other:Fill)
-	{
-		return bitmap == other.bitmap
-			&& bitmapSmooth == other.bitmapSmooth
-			&& bitmapRepeat == other.bitmapRepeat
-			&& gradientEquals(gradient, other.gradient);
-	}
-
-	public function gradientEquals(g1:Gradient, g2:Gradient):Bool
-	{
-		if (g1 == g2) return true;
-		if (g1 == null || g2 == null) return false;
-		return g1.equals(g2);
 	}
 }
 
@@ -1224,7 +1042,7 @@ class DrawContext
 				}
 				else if (stroke.contour != null)
 				{
-					stroke.appendContour(fill.contour.points[0], fill.contour.points[1]);
+					stroke.contour.append(fill.contour.points[0], fill.contour.points[1]);
 				}
 			}
 			fill.endContour();
@@ -1269,18 +1087,16 @@ class DrawContext
 	{
 		if (hasFill)
 		{
-			fill.endContour();
 			fill.newContour(x, y);
 		}
 		if (hasStroke)
 		{
-			stroke.endContour();
 			stroke.newContour(x, y);
 		}
 		position.setTo(x, y);
 	}
 
-	public inline function appendContour(x:Float, y:Float)
+	public inline function appendContour(x:Float, y:Float, isCurve:Bool = false)
 	{
 		if (hasFill)
 		{
@@ -1288,7 +1104,7 @@ class DrawContext
 			{
 				fill.newContour(position.x, position.y);
 			}
-			fill.appendContour(x, y);
+			fill.contour.append(x, y, isCurve);
 		}
 		if (hasStroke)
 		{
@@ -1296,7 +1112,7 @@ class DrawContext
 			{
 				stroke.newContour(position.x, position.y);
 			}
-			stroke.appendContour(x, y);
+			stroke.contour.append(x, y, isCurve);
 		}
 		position.setTo(x, y);
 	}
@@ -1312,7 +1128,7 @@ class DrawContext
 
 		if (d * d <= curveTolerance * (dx * dx + dy * dy))
 		{
-			appendContour(x1, y1);
+			appendContour(x1, y1, true);
 			return;
 		}
 
@@ -1341,7 +1157,7 @@ class DrawContext
 
 		if ((d1 + d2) * (d1 + d2) <= curveTolerance * (dx * dx + dy * dy))
 		{
-			appendContour(x1, y1);
+			appendContour(x1, y1, true);
 			return;
 		}
 
@@ -1382,6 +1198,7 @@ class FillContext
 
 	public function identity()
 	{
+		contour = null;
 		clearContours();
 		fill.identity();
 	}
@@ -1402,17 +1219,15 @@ class FillContext
 		contour.append(x, y);
 	}
 
-	public function appendContour(x:Float, y:Float)
-	{
-		contour.append(x, y);
-	}
-
 	public function endContour()
 	{
 		if (contour != null)
 		{
 			contour.end();
-			contours.push(contour);
+			if (contour.points.length >= 4)
+			{
+				contours.push(contour);
+			}
 		}
 		contour = null;
 	}
@@ -1446,31 +1261,34 @@ class StrokeContext extends FillContext
 
 class Contour
 {
-	public var points:Array<Float> = [];
-	public var closed:Bool;
+	public var points:Vector<Float> = new Vector<Float>();
+	public var curve:Vector<Bool> = new Vector<Bool>();
+	public var closed:Bool = false;
 	public var x:Float = 0;
 	public var y:Float = 0;
 
-	private static var __pool:ObjectPool<Contour> = new ObjectPool<Contour>(() -> new Contour(), (c) -> c.free());
+	private static var __pool:ObjectPool<Contour> = new ObjectPool<Contour>(() -> new Contour(), (c) -> c.reset());
 
 	public function new()
 	{
-		free();
+		reset();
 	}
 
-	public inline function free()
+	public inline function reset()
 	{
-		ArrayUtil.clear(points);
+		points.length = 0;
+		curve.length = 0;
 		closed = false;
 		x = 0;
 		y = 0;
 	}
 
-	public inline function append(x:Float, y:Float)
+	public inline function append(x:Float, y:Float, isCurve:Bool = false)
 	{
 		if (points.length >= 2 && this.x == x && this.y == y) return;
 		points.push(x);
 		points.push(y);
+		curve.push(isCurve);
 		this.x = x;
 		this.y = y;
 	}
@@ -1482,7 +1300,8 @@ class Contour
 		var firstY = points[1];
 		if (firstX == x && firstY == y)
 		{
-			ArrayUtil.resize(points, points.length - 2);
+			points.length -= 2;
+			curve.length -= 1;
 			closed = true;
 		}
 	}

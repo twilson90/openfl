@@ -4,6 +4,7 @@ package openfl.display3D;
 import openfl.display3D._internal.GLBuffer;
 import openfl.utils._internal.ArrayBufferView;
 import openfl.utils._internal.UInt16Array;
+import openfl.utils._internal.UInt32Array;
 import openfl.utils.ByteArray;
 import openfl.Vector;
 
@@ -26,6 +27,7 @@ import openfl.Vector;
 #end
 @:access(openfl.display3D.Context3D)
 @:access(openfl.display.Stage)
+@:access(lime.utils.ArrayBufferView)
 @:final class IndexBuffer3D
 {
 	@:noCompletion private var __context:Context3D;
@@ -34,6 +36,8 @@ import openfl.Vector;
 	@:noCompletion private var __numIndices:Int;
 	@:noCompletion private var __tempUInt16Array:UInt16Array;
 	@:noCompletion private var __usage:Int;
+	@:noCompletion private var __indexType:Int;
+	@:noCompletion private var __bytesPerElement:Int;
 
 	@:noCompletion private function new(context3D:Context3D, numIndices:Int, bufferUsage:Context3DBufferUsage)
 	{
@@ -44,6 +48,7 @@ import openfl.Vector;
 		__id = gl.createBuffer();
 
 		__usage = (bufferUsage == Context3DBufferUsage.DYNAMIC_DRAW) ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
+		__indexType = gl.UNSIGNED_SHORT;
 	}
 
 	/**
@@ -97,6 +102,18 @@ import openfl.Vector;
 		var gl = __context.gl;
 		__context.__bindGLElementArrayBuffer(__id);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);
+		__indexType = gl.UNSIGNED_SHORT;
+		__bytesPerElement = 2;
+	}
+
+	public function uploadFromUInt32Array(data:UInt32Array, byteLength:Int = -1):Void
+	{
+		if (data == null) return;
+		var gl = __context.gl;
+		__context.__bindGLElementArrayBuffer(__id);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);
+		__indexType = gl.UNSIGNED_INT;
+		__bytesPerElement = 4;
 	}
 
 	/**

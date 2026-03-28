@@ -859,24 +859,22 @@ class CairoGraphics
 					var shaderBuffer = c.shaderBuffer;
 
 					hasFillStyle = true;
+					trace(c.shaderBuffer.inputCount);
 
-					if (c.shaderBuffer.inputCount > 0 && shaderBuffer.inputs[0].readable && !hitTesting && !masking)
+					if (shaderBuffer.inputs[0] != null && shaderBuffer.inputs[0].readable && !hitTesting && !masking)
 					{
-						if (shaderBuffer.inputs[0].readable && !hitTesting && !masking)
-						{
-							fillBitmap = shaderBuffer.inputs[0];
-							fillPattern = createImagePattern(fillBitmap, shaderBuffer.inputWrap[0] != CLAMP, shaderBuffer.inputFilter[0] != NEAREST);
-							fillMatrix.copyFrom(c.matrix != null ? c.matrix : Matrix.__identity);
-							hasFillMatrix = true;
-						}
-						else
-						{
-							// if it's hardware-only BitmapData, fall back to
-							// drawing solid black because we have no software
-							// pixels to work with
-							fillPattern = CairoPattern.createRGB(0, 0, 0);
-							hasFillMatrix = false;
-						}
+						fillBitmap = shaderBuffer.inputs[0];
+						fillPattern = createImagePattern(fillBitmap, shaderBuffer.inputWrap[0] != CLAMP, shaderBuffer.inputFilter[0] != NEAREST);
+						fillMatrix.copyFrom(c.matrix != null ? c.matrix : Matrix.__identity);
+						hasFillMatrix = true;
+					}
+					else
+					{
+						// if it's hardware-only BitmapData, fall back to
+						// drawing solid black because we have no software
+						// pixels to work with
+						fillPattern = CairoPattern.createRGB(0, 0, 0);
+						hasFillMatrix = false;
 					}
 
 				case DRAW_CIRCLE:
@@ -1391,6 +1389,7 @@ class CairoGraphics
 
 			var offset = Point.__pool.get();
 			graphics.__calculateRenderOffset(offset);
+			trace(offset.x, offset.y);
 			cairo.translate(-offset.x, -offset.y);
 
 			processCommands(renderer);
@@ -1438,8 +1437,8 @@ class CairoGraphics
 
 		if (graphics.__useScale9Grid)
 		{
-			x *= graphics.__owner.scaleX;
-			y *= graphics.__owner.scaleY;
+			x *= graphics.__owner.__scaleX;
+			y *= graphics.__owner.__scaleY;
 		}
 
 		var cacheCairo = graphics.__cairo;

@@ -14,21 +14,9 @@ class Context3DMaskShader extends Shader
 
 	@:glFragmentSource("varying vec2 openfl_TextureCoordv;
 
-		uniform sampler2D openfl_Texture;
-
 		void main(void) {
 
-			vec4 color = texture2D (openfl_Texture, openfl_TextureCoordv);
-
-			if (color.a == 0.0) {
-
-				discard;
-
-			} else {
-
-				gl_FragColor = color;
-
-			}
+			gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
 
 		}")
 	@:glVertexSource("attribute vec4 openfl_Position;

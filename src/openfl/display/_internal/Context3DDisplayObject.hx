@@ -63,19 +63,8 @@ class Context3DDisplayObject
 			var shape = __opaqueBackgroundShape;
 			shape.graphics.clear();
 			shape.graphics.beginFill(displayObject.opaqueBackground);
-
-			// Pixel offset fix for axis-aligned transform when bounds.x is resting perfectly between 2 pixel centers
-			// if ((renderTransform.a * renderTransform.b == 0) && (renderTransform.c * renderTransform.d == 0))
-			// {
-			// 	displayObject.__getRenderBounds(rect, renderTransform);
-			// 	if (Math.abs(rect.x % 1) == 0.5) rect.x += 0.01;
-			// 	shape.__renderTransform.copyFrom(Matrix.__identity);
-			// }
-			// else
-			// {
 			displayObject.__getRenderBounds(rect, Matrix.__identity);
 			shape.__renderTransform.copyFrom(renderTransform);
-			// }
 			shape.graphics.drawRect(rect.x, rect.y, rect.width, rect.height);
 
 			Context3DDisplayObject.render(shape, renderer);

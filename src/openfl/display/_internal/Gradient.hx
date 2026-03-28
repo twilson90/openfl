@@ -12,6 +12,7 @@ import openfl.geom.Matrix;
 class Gradient
 {
 	public var colors:Array<Int> = [];
+	public var alphas:Array<Float> = [];
 	public var ratios:Array<Int> = [];
 	public var matrix:Matrix = new Matrix();
 	public var type:GradientType;
@@ -41,16 +42,16 @@ class Gradient
 		}
 		else
 		{
-			var numEntries = colors.length;
-			if (numEntries != alphas.length || numEntries != ratios.length) throw "Gradient colors, alphas, and ratios must have the same length";
-
-			ArrayUtil.resize(this.colors, numEntries);
-			for (i in 0...numEntries)
-			{
-				this.colors[i] = Std.int(alphas[i] * 255) << 24 | colors[i];
-			}
+			ArrayUtil.copyFrom(this.colors, colors);
 		}
-
+		if (alphas == null)
+		{
+			ArrayUtil.clear(this.alphas);
+		}
+		else
+		{
+			ArrayUtil.copyFrom(this.alphas, alphas);
+		}
 		if (ratios == null)
 		{
 			ArrayUtil.clear(this.ratios);
@@ -70,6 +71,7 @@ class Gradient
 	public function identity()
 	{
 		ArrayUtil.clear(colors);
+		ArrayUtil.clear(alphas);
 		ArrayUtil.clear(ratios);
 		matrix.identity();
 		type = null;
@@ -99,8 +101,10 @@ class Gradient
 			var r1 = ratios[index + 1];
 			var c0 = colors[index];
 			var c1 = colors[index + 1];
+			var a0 = alphas[index];
+			var a1 = alphas[index + 1];
 			var f = (r - r0) / (r1 - r0);
-			var aa = Std.int(((c0 >> 24 & 0xFF) * (1 - f)) + ((c1 >> 24 & 0xFF) * f));
+			var aa = Std.int((a0 * 255 * (1 - f)) + (a1 * 255 * f));
 			var rr = Std.int(((c0 >> 16 & 0xFF) * (1 - f)) + ((c1 >> 16 & 0xFF) * f));
 			var gg = Std.int(((c0 >> 8 & 0xFF) * (1 - f)) + ((c1 >> 8 & 0xFF) * f));
 			var bb = Std.int(((c0 & 0xFF) * (1 - f)) + ((c1 & 0xFF) * f));
@@ -126,9 +130,15 @@ class Gradient
 		return bmd;
 	}
 
+	public function copyFrom(other:Gradient)
+	{
+		setTo(other.colors, other.alphas, other.ratios, other.matrix, other.type, other.interpolationMethod, other.spreadMethod, other.focalPointRatio);
+	}
+
 	public function equals(other:Gradient):Bool
 	{
 		return arrayEquals(colors, other.colors)
+			&& arrayEquals(alphas, other.alphas)
 			&& arrayEquals(ratios, other.ratios)
 			&& matrix.equals(other.matrix)
 			&& type == other.type
@@ -137,10 +147,17 @@ class Gradient
 			&& focalPointRatio == other.focalPointRatio;
 	}
 
+	private static function __equals(g1:Gradient, g2:Gradient):Bool
+	{
+		if (g1 == g2) return true;
+		if (g1 == null || g2 == null) return false;
+		return g1.equals(g2);
+	}
+
 	public function getHash():String
 	{
-		return colors.join(",") + ":" + ratios.join(",") + ":" + matrix.toString() + ":" + type + ":" + interpolationMethod + ":" + focalPointRatio + ":"
-			+ spreadMethod;
+		return colors.join(",") + ":" + alphas.join(",") + ":" + ratios.join(",") + ":" + matrix.toString() + ":" + type + ":" + interpolationMethod + ":"
+			+ focalPointRatio + ":" + spreadMethod;
 	}
 
 	static private inline function arrayEquals<T>(a1:Array<T>, a2:Array<T>)

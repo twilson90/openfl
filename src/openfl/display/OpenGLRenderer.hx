@@ -184,6 +184,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		1: Bitmap Fill
 		2: Linear Gradient
 		3: Radial Gradient
+		4: Shader
 	**/
 	public function applyGraphicsFillType(type:Int):Void
 	{
@@ -528,6 +529,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			if (__currentShader.__position != null) __currentShader.__position.value = null;
 			if (__currentShader.__matrix != null) __currentShader.__matrix.value = null;
 			if (__currentShader.__vertexColor != null) __currentShader.__vertexColor.value = null;
+			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = null;
+			if (__currentShader.__fillType != null) __currentShader.__fillType.value = null;
 			__currentShader.__clearUseArray();
 		}
 	}

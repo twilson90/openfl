@@ -1254,7 +1254,7 @@ import lime.math.Vector2;
 		var count = (numTriangles == -1) ? indexBuffer.__numIndices : (numTriangles * 3);
 
 		__bindGLElementArrayBuffer(indexBuffer.__id);
-		gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, firstIndex * 2);
+		gl.drawElements(gl.TRIANGLES, count, indexBuffer.__indexType, firstIndex * indexBuffer.__bytesPerElement);
 	}
 
 	public function drawLines(indexBuffer:IndexBuffer3D, firstIndex:Int = 0, numLines:Int = -1):Void
@@ -1262,7 +1262,7 @@ import lime.math.Vector2;
 		__clearAndFlush();
 		var count = (numLines == -1) ? indexBuffer.__numIndices : (numLines * 2);
 		__bindGLElementArrayBuffer(indexBuffer.__id);
-		gl.drawElements(gl.LINES, count, gl.UNSIGNED_SHORT, firstIndex * 2);
+		gl.drawElements(gl.LINES, count, indexBuffer.__indexType, firstIndex * indexBuffer.__bytesPerElement);
 	}
 
 	/**
@@ -2051,6 +2051,12 @@ import lime.math.Vector2;
 	{
 		__clearAndFlush();
 		gl.drawArrays(gl.TRIANGLES, firstIndex, count);
+	}
+
+	@:noCompletion private function __drawLines(firstIndex:Int = 0, count:Int):Void
+	{
+		__clearAndFlush();
+		gl.drawArrays(gl.LINES, firstIndex, count);
 	}
 
 	@:noCompletion private function __flushGL():Void
