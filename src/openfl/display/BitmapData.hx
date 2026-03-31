@@ -141,6 +141,7 @@ class BitmapData implements IBitmapDrawable
 	#if lime
 	@:noCompletion private static var __tempVector:Vector2 = new Vector2();
 	@:noCompletion private static var __fillRectRectangle:Rectangle = new Rectangle();
+	@:noCompletion private static var __IS_TEXTURE:Bool = false;
 	#end
 
 	/**
@@ -268,7 +269,7 @@ class BitmapData implements IBitmapDrawable
 		__textureWidth = width;
 		__textureHeight = height;
 
-		if (width > 0 && height > 0)
+		if (width > 0 && height > 0 && !__IS_TEXTURE)
 		{
 			if (transparent)
 			{
@@ -1389,11 +1390,14 @@ class BitmapData implements IBitmapDrawable
 	{
 		if (texture == null) return null;
 
+		// prevent allocating of buffer
+		__IS_TEXTURE = true;
 		var bitmapData = new BitmapData(texture.__width, texture.__height, true, 0);
+		__IS_TEXTURE = false;
+
 		bitmapData.readable = false;
 		bitmapData.__texture = texture;
 		bitmapData.__textureContext = texture.__textureContext;
-		bitmapData.image = null;
 		return bitmapData;
 	}
 

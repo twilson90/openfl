@@ -13,9 +13,11 @@ import openfl.display._internal.Context3DTilemap;
 import openfl.display._internal.Context3DVideo;
 import openfl.display._internal.ShaderBuffer;
 import openfl.display._internal.Gradient;
+// import openfl.display._internal.FilterManager;
 import openfl.utils.ObjectPool;
 import openfl.display3D.Context3DClearMask;
 import openfl.display3D.Context3D;
+import openfl.display3D.textures.TextureBase;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
@@ -108,6 +110,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private var __values:Array<Float>;
 	@:noCompletion private var __width:Int;
 
+	// @:noCompletion private var __filterManager:FilterManager;
+
 	@:noCompletion private function new(context:Context3D, defaultRenderTarget:BitmapData = null)
 	{
 		super();
@@ -120,6 +124,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 
 		this.__defaultRenderTarget = defaultRenderTarget;
 		this.__flipped = (__defaultRenderTarget == null);
+
+		// __filterManager = new FilterManager(this);
 
 		if (Graphics.maxTextureWidth == null)
 		{
@@ -719,6 +725,20 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		{
 			__pushMask(object.__mask);
 		}
+	}
+
+	@:noCompletion private override function __pushFilters(object:DisplayObject):Void
+	{
+		#if openfl_disable_cacheasbitmap
+		__filterManager.pushFilters(object);
+		#end
+	}
+
+	@:noCompletion private override function __popFilters(object:DisplayObject):Void
+	{
+		#if openfl_disable_cacheasbitmap
+		__filterManager.popFilters(object);
+		#end
 	}
 
 	@:noCompletion private override function __pushMaskRect(rect:Rectangle, transform:Matrix):Void

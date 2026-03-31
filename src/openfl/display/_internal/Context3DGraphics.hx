@@ -66,15 +66,16 @@ class Context3DGraphics
 	private static var tempVerticesVector:Vector<Float> = new Vector<Float>();
 	private static var tempScale9VerticesVector:Vector<Float> = new Vector<Float>();
 	private static var tempIndicesVector:Vector<Int> = new Vector<Int>();
-	private static var tempUvtVector:Vector<Float> = new Vector<Float>();
+	private static var tempUvtDataVector:Vector<Float> = new Vector<Float>();
 	private static var fillTess:Tesselator = new Tesselator();
 	private static var lineTess:PolyLineTesselator = new PolyLineTesselator();
 
 	private static var graphics:Graphics;
+	private static var ctx:DrawContext;
 	private static var buffer:Context3DBatchBuffer;
 
 	private static function buildDrawTrianglesBuffer(vertices:Vector<Float>, indices:Vector<Int> = null, uvtData:Vector<Float> = null, fill:Fill,
-			triCulling:TriangleCulling = NONE, isStroke:Bool = false):Void
+			triCulling:TriangleCulling = NONE, isStroke:Bool = false)
 	{
 		var numVertices = Std.int(vertices.length / 2);
 		if (numVertices < 3) return;
@@ -83,25 +84,27 @@ class Context3DGraphics
 		{
 			if (fill.bitmap != null)
 			{
-				uvtData = tempUvtVector;
+				uvtData = tempUvtDataVector;
 				graphics.__generateUV(vertices, fill.bitmap.width, fill.bitmap.height, fill.matrix, uvtData);
 			}
 			else if (fill.shaderBuffer != null)
 			{
-				uvtData = tempUvtVector;
+				uvtData = tempUvtDataVector;
 				graphics.__generateUV(vertices, 1, 1, fill.matrix, uvtData);
 			}
 			else if (fill.gradient != null)
 			{
-				uvtData = tempUvtVector;
+				uvtData = tempUvtDataVector;
 				graphics.__generateUV(vertices, 819.2, 819.2, fill.matrix, uvtData);
 			}
 		}
 
-		if (/* !isStroke &&  */ graphics.__useScale9Grid)
+		#if !openfl_gl_scale9grid
+		if (graphics.__useScale9Grid)
 		{
 			vertices = applyScale9Grid(vertices);
 		}
+		#end
 
 		if (indices == null)
 		{
@@ -171,7 +174,7 @@ class Context3DGraphics
 		}
 
 		tempVerticesVector.length = length * 8;
-		tempUvtVector.length = length * 8;
+		tempUvtDataVector.length = length * 8;
 		tempIndicesVector.length = length * 6;
 
 		var bitmapWidth:Int;
@@ -280,14 +283,14 @@ class Context3DGraphics
 			tempVerticesVector[vo + 6] = x4;
 			tempVerticesVector[vo + 7] = y4;
 
-			tempUvtVector[vo] = uvX;
-			tempUvtVector[vo + 1] = uvY;
-			tempUvtVector[vo + 2] = uvRight;
-			tempUvtVector[vo + 3] = uvY;
-			tempUvtVector[vo + 4] = uvX;
-			tempUvtVector[vo + 5] = uvBottom;
-			tempUvtVector[vo + 6] = uvRight;
-			tempUvtVector[vo + 7] = uvBottom;
+			tempUvtDataVector[vo] = uvX;
+			tempUvtDataVector[vo + 1] = uvY;
+			tempUvtDataVector[vo + 2] = uvRight;
+			tempUvtDataVector[vo + 3] = uvY;
+			tempUvtDataVector[vo + 4] = uvX;
+			tempUvtDataVector[vo + 5] = uvBottom;
+			tempUvtDataVector[vo + 6] = uvRight;
+			tempUvtDataVector[vo + 7] = uvBottom;
 
 			tempIndicesVector[ii] = vi;
 			tempIndicesVector[ii + 1] = vi + 1;
@@ -298,10 +301,129 @@ class Context3DGraphics
 			tempIndicesVector[ii + 5] = vi + 2;
 		}
 
-		buildDrawTrianglesBuffer(tempVerticesVector, tempIndicesVector, tempUvtVector, fill);
-
 		Rectangle.__pool.release(tileRect);
 		Matrix.__pool.release(tileTransform);
+	}
+
+	private static inline function drawRect(x:Float, y:Float, width:Float, height:Float)
+	{
+		#if openfl_gl_scale9grid
+		if (graphics.__useScale9Grid)
+		{
+			var scaledLeft = graphics.__getScale9GridPositionX(x);
+			var scaledTop = graphics.__getScale9GridPositionY(y);
+			var scaledRight = graphics.__getScale9GridPositionX(x + width);
+			var scaledBottom = graphics.__getScale9GridPositionY(y + height);
+
+			x = scaledLeft;
+			y = scaledTop;
+			width = scaledRight - scaledLeft;
+			height = scaledBottom - scaledTop;
+		}
+		#end
+
+		if (width != 0.0 || height != 0.0)
+		{
+			ctx.newContour(x, y);
+			ctx.appendContour(x + width, y);
+			ctx.appendContour(x + width, y + height);
+			ctx.appendContour(x, y + height);
+			ctx.appendContour(x, y);
+		}
+	}
+
+	private static inline function drawRoundRect(x:Float, y:Float, width:Float, height:Float, ellipseWidth:Float, ellipseHeight:Float)
+	{
+		var left = x;
+		var top = y;
+		var right = x + width;
+		var bottom = y + height;
+
+		#if openfl_gl_scale9grid
+		if (graphics.__useScale9Grid)
+		{
+			var scaledLeft = graphics.__getScale9GridPositionX(left);
+			var scaledTop = graphics.__getScale9GridPositionY(top);
+			var scaledRight = graphics.__getScale9GridPositionX(right);
+			var scaledBottom = graphics.__getScale9GridPositionY(bottom);
+			var scaledEllipseLeft = graphics.__getScale9GridPositionX(left + ellipseWidth * 0.5) - scaledLeft;
+			var scaledEllipseRight = scaledRight - graphics.__getScale9GridPositionX(right - ellipseWidth * 0.5);
+			var scaledEllipseTop = graphics.__getScale9GridPositionY(top + ellipseHeight * 0.5) - scaledTop;
+			var scaledEllipseBottom = scaledBottom - graphics.__getScale9GridPositionY(bottom - ellipseHeight * 0.5);
+			var scaledEllipseWidth = Math.min(Math.min(scaledEllipseLeft, scaledEllipseRight), scaledRight - scaledLeft);
+			var scaledEllipseHeight = Math.min(Math.min(scaledEllipseTop, scaledEllipseBottom), scaledBottom - scaledTop);
+
+			left = scaledLeft;
+			top = scaledTop;
+			right = scaledRight;
+			bottom = scaledBottom;
+			ellipseWidth = scaledEllipseWidth;
+			ellipseHeight = scaledEllipseHeight;
+			width = right - left;
+			height = bottom - top;
+		}
+		#end
+
+		if (width != 0 && height != 0)
+		{
+			var rx = ellipseWidth * 0.5;
+			var ry = ellipseHeight * 0.5;
+			var ox = rx * KAPPA;
+			var oy = ry * KAPPA;
+			var x0 = left;
+			var x1 = right;
+			var y0 = top;
+			var y1 = bottom;
+
+			ctx.newContour(x1, y1 - ry);
+			ctx.appendContourCubicCurve(x1, y1 - ry + oy, x1 - rx + ox, y1, x1 - rx, y1);
+			ctx.appendContour(x0 + rx, y1);
+			ctx.appendContourCubicCurve(x0 + rx - ox, y1, x0, y1 - ry + oy, x0, y1 - ry);
+			ctx.appendContour(x0, y0 + ry);
+			ctx.appendContourCubicCurve(x0, y0 + ry - oy, x0 + rx - ox, y0, x0 + rx, y0);
+			ctx.appendContour(x1 - rx, y0);
+			ctx.appendContourCubicCurve(x1 - rx + ox, y0, x1, y0 + ry - oy, x1, y0 + ry);
+			ctx.appendContour(x1, y1 - ry);
+		}
+	}
+
+	private static inline function drawCircle(x:Float, y:Float, r:Float)
+	{
+		drawEllipse(x - r, y - r, r * 2, r * 2);
+	}
+
+	private static inline function drawEllipse(x:Float, y:Float, width:Float, height:Float)
+	{
+		#if openfl_gl_scale9grid
+		if (graphics.__useScale9Grid)
+		{
+			var scaledLeft = graphics.__getScale9GridPositionX(x);
+			var scaledTop = graphics.__getScale9GridPositionY(y);
+			var scaledRight = graphics.__getScale9GridPositionX(x + width);
+			var scaledBottom = graphics.__getScale9GridPositionY(y + height);
+
+			x = scaledLeft;
+			y = scaledTop;
+			width = scaledRight - scaledLeft;
+			height = scaledBottom - scaledTop;
+		}
+		#end
+
+		if (width != 0.0 || height != 0.0)
+		{
+			var ox = (width / 2.0) * KAPPA; // control point offset horizontal
+			var oy = (height / 2.0) * KAPPA; // control point offset vertical
+			var xe = x + width; // x-end
+			var ye = y + height; // y-end
+			var xm = x + width / 2; // x-middle
+			var ym = y + height / 2; // y-middle
+
+			ctx.newContour(xe, ym);
+			ctx.appendContourCubicCurve(xe, ym + oy, xm + ox, ye, xm, ye);
+			ctx.appendContourCubicCurve(xm - ox, ye, x, ym + oy, x, ym);
+			ctx.appendContourCubicCurve(x, ym - oy, xm - ox, y, xm, y);
+			ctx.appendContourCubicCurve(xm + ox, y, xe, ym - oy, xe, ym);
+		}
 	}
 
 	private static inline function buildBuffer():Void
@@ -309,7 +431,7 @@ class Context3DGraphics
 		var data = DrawCommandReader.__pool.get();
 		data.reset(graphics.__commands);
 
-		var ctx = DrawContext.__pool.get();
+		ctx = DrawContext.__pool.get();
 
 		if (graphics.__buffer == null)
 		{
@@ -332,31 +454,73 @@ class Context3DGraphics
 					var c = data.readMoveTo();
 					var x = c.x;
 					var y = c.y;
+
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						x = graphics.__getScale9GridPositionX(x);
+						y = graphics.__getScale9GridPositionY(y);
+					}
+					#end
+
 					ctx.newContour(x, y);
 
 				case LINE_TO:
 					var c = data.readLineTo();
 					var x = c.x;
 					var y = c.y;
+
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						x = graphics.__getScale9GridPositionX(x);
+						y = graphics.__getScale9GridPositionY(y);
+					}
+					#end
+
 					ctx.appendContour(x, y);
 
 				case CURVE_TO:
 					var c = data.readCurveTo();
-					var x1 = c.controlX;
-					var y1 = c.controlY;
-					var x2 = c.anchorX;
-					var y2 = c.anchorY;
-					ctx.appendContourCurve(x1, y1, x2, y2);
+					var controlX = c.controlX;
+					var controlY = c.controlY;
+					var anchorX = c.anchorX;
+					var anchorY = c.anchorY;
+
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						controlX = graphics.__getScale9GridPositionX(c.controlX);
+						controlY = graphics.__getScale9GridPositionY(c.controlY);
+						anchorX = graphics.__getScale9GridPositionX(c.anchorX);
+						anchorY = graphics.__getScale9GridPositionY(c.anchorY);
+					}
+					#end
+
+					ctx.appendContourCurve(controlX, controlY, anchorX, anchorY);
 
 				case CUBIC_CURVE_TO:
 					var c = data.readCubicCurveTo();
-					var x1 = c.controlX1;
-					var y1 = c.controlY1;
-					var x2 = c.controlX2;
-					var y2 = c.controlY2;
-					var x3 = c.anchorX;
-					var y3 = c.anchorY;
-					ctx.appendContourCubicCurve(x1, y1, x2, y2, x3, y3);
+					var controlX1 = c.controlX1;
+					var controlY1 = c.controlY1;
+					var controlX2 = c.controlX2;
+					var controlY2 = c.controlY2;
+					var anchorX = c.anchorX;
+					var anchorY = c.anchorY;
+
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						controlX1 = graphics.__getScale9GridPositionX(c.controlX1);
+						controlY1 = graphics.__getScale9GridPositionY(c.controlY1);
+						controlX2 = graphics.__getScale9GridPositionX(c.controlX2);
+						controlY2 = graphics.__getScale9GridPositionY(c.controlY2);
+						anchorX = graphics.__getScale9GridPositionX(c.anchorX);
+						anchorY = graphics.__getScale9GridPositionY(c.anchorY);
+					}
+					#end
+
+					ctx.appendContourCubicCurve(controlX1, controlY1, controlX2, controlY2, anchorX, anchorY);
 
 				case BEGIN_BITMAP_FILL:
 					buildDrawContext(ctx);
@@ -479,9 +643,19 @@ class Context3DGraphics
 					buildDrawContext(ctx);
 					var c = data.readDrawQuads();
 					var rects = c.rects;
-					var indices = c.indices;
-					var transforms = c.transforms;
-					buildDrawQuadsBuffer(rects, indices, transforms, ctx.fill.fill);
+					var rectIndices = c.indices;
+					var rectTransforms = c.transforms;
+					var vertices = tempVerticesVector;
+					var indices = tempIndicesVector;
+					var uvtData = tempUvtDataVector;
+					buildDrawQuadsBuffer(rects, rectIndices, rectTransforms, ctx.fill.fill);
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						vertices = applyScale9Grid(vertices);
+					}
+					#end
+					buildDrawTrianglesBuffer(vertices, indices, uvtData, ctx.fill.fill);
 
 				case DRAW_TRIANGLES:
 					buildDrawContext(ctx);
@@ -491,6 +665,12 @@ class Context3DGraphics
 					var indices = c.indices;
 					var uvtData = c.uvtData;
 					var culling = c.culling;
+					#if openfl_gl_scale9grid
+					if (graphics.__useScale9Grid)
+					{
+						vertices = applyScale9Grid(vertices);
+					}
+					#end
 					buildDrawTrianglesBuffer(vertices, indices, uvtData, ctx.fill.fill, culling);
 
 				case DRAW_CIRCLE:
@@ -499,28 +679,17 @@ class Context3DGraphics
 					var x = c.x;
 					var y = c.y;
 					var r = c.radius;
-					var o = r * KAPPA;
-					ctx.newContour(x + r, y);
-					ctx.appendContourCubicCurve(x + r, y - o, x + o, y - r, x, y - r);
-					ctx.appendContourCubicCurve(x - o, y - r, x - r, y - o, x - r, y);
-					ctx.appendContourCubicCurve(x - r, y + o, x - o, y + r, x, y + r);
-					ctx.appendContourCubicCurve(x + o, y + r, x + r, y + o, x + r, y);
-					ctx.newContour(x + r, y);
+
+					drawCircle(x, y, r);
 
 				case DRAW_ELLIPSE:
 					var c = data.readDrawEllipse();
-					var rx = c.width / 2.0;
-					var ry = c.height / 2.0;
-					var x = c.x + rx;
-					var y = c.y + ry;
-					var ox = rx * KAPPA;
-					var oy = ry * KAPPA;
-					ctx.newContour(x + rx, y);
-					ctx.appendContourCubicCurve(x + rx, y - oy, x + ox, y - ry, x, y - ry);
-					ctx.appendContourCubicCurve(x - ox, y - ry, x - rx, y - oy, x - rx, y);
-					ctx.appendContourCubicCurve(x - rx, y + oy, x - ox, y + ry, x, y + ry);
-					ctx.appendContourCubicCurve(x + ox, y + ry, x + rx, y + oy, x + rx, y);
-					ctx.newContour(x + rx, y);
+					var x = c.x;
+					var y = c.y;
+					var width = c.width;
+					var height = c.height;
+
+					drawEllipse(x, y, width, height);
 
 				case DRAW_ROUND_RECT:
 					var c = data.readDrawRoundRect();
@@ -528,22 +697,13 @@ class Context3DGraphics
 					var y = c.y;
 					var width = c.width;
 					var height = c.height;
-					var rx = c.ellipseWidth / 2.0;
-					var ry = (c.ellipseHeight != null ? c.ellipseHeight : c.ellipseWidth) / 2.0;
-					var ox = rx * KAPPA;
-					var oy = ry * KAPPA;
-					var right = x + width;
-					var bottom = y + height;
-					ctx.newContour(x + rx, y);
-					ctx.appendContour(right - rx, y);
-					ctx.appendContourCubicCurve(right - ox, y, right, y + oy, right, y + ry);
-					ctx.appendContour(right, bottom - ry);
-					ctx.appendContourCubicCurve(right, bottom - oy, right - ox, bottom, right - rx, bottom);
-					ctx.appendContour(x + rx, bottom);
-					ctx.appendContourCubicCurve(x + ox, bottom, x, bottom - oy, x, bottom - ry);
-					ctx.appendContour(x, y + ry);
-					ctx.appendContourCubicCurve(x, y + oy, x + ox, y, x + rx, y);
-					ctx.newContour(x + rx, y);
+					var ellipseWidth = c.ellipseWidth;
+					var ellipseHeight = c.ellipseHeight;
+
+					if (ellipseHeight == null) ellipseHeight = ellipseWidth;
+					if (ellipseWidth > width) ellipseWidth = width;
+					if (ellipseHeight > height) ellipseHeight = height;
+					drawRoundRect(x, y, width, height, ellipseWidth, ellipseHeight);
 
 				case DRAW_RECT:
 					var c = data.readDrawRect();
@@ -551,12 +711,8 @@ class Context3DGraphics
 					var y = c.y;
 					var width = c.width;
 					var height = c.height;
-					ctx.newContour(x, y);
-					ctx.appendContour(x + width, y);
-					ctx.appendContour(x + width, y + height);
-					ctx.appendContour(x, y + height);
-					ctx.appendContour(x, y);
-					ctx.newContour(x, y);
+
+					drawRect(x, y, width, height);
 
 				case WINDING_EVEN_ODD:
 					data.readWindingEvenOdd();
@@ -575,6 +731,7 @@ class Context3DGraphics
 
 		buildDrawContext(ctx);
 		DrawContext.__pool.release(ctx);
+		ctx = null;
 	}
 
 	private static function buildDrawContext(ctx:DrawContext):Void
@@ -585,7 +742,8 @@ class Context3DGraphics
 		{
 			for (contour in fill.contours)
 			{
-				fillTess.addContour(2, contour.points);
+				var points = contour.points;
+				fillTess.addContour(2, points);
 			}
 			var windingRule:WindingRule = switch (ctx.windingRule)
 			{
@@ -593,7 +751,10 @@ class Context3DGraphics
 				case NONZERO: WindingRule.NON_ZERO;
 			}
 			fillTess.tesselate(windingRule, POLYGONS);
-			buildDrawTrianglesBuffer(fillTess.vertices, fillTess.elements, null, fill.fill);
+
+			var vertices = fillTess.vertices;
+			var indices = fillTess.elements;
+			buildDrawTrianglesBuffer(vertices, indices, null, fill.fill);
 			fillTess.reset();
 		}
 
@@ -607,7 +768,9 @@ class Context3DGraphics
 				var points = contour.points;
 				lineTess.addPoints(points, contour.curve);
 				lineTess.tesselate(closed, stroke.thickness, stroke.joints, stroke.caps, stroke.miterLimit, stroke.scaleMode);
-				buildDrawTrianglesBuffer(lineTess.vertices, lineTess.indices, null, stroke.fill, NONE, true);
+				var vertices = lineTess.vertices;
+				var indices = lineTess.indices;
+				buildDrawTrianglesBuffer(vertices, indices, null, stroke.fill, NONE, true);
 				lineTess.reset();
 			}
 		}

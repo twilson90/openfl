@@ -104,6 +104,10 @@ class DisplayObjectRenderer extends EventDispatcher
 
 	@:noCompletion private function __render(object:IBitmapDrawable):Void {}
 
+	@:noCompletion private function __pushFilters(object:DisplayObject):Void {}
+
+	@:noCompletion private function __popFilters(object:DisplayObject):Void {}
+
 	@:noCompletion private function __renderEvent(displayObject:DisplayObject):Void
 	{
 		var renderer = this;

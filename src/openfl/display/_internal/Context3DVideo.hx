@@ -37,7 +37,7 @@ class Context3DVideo
 
 			renderer.__setBlendMode(video.__worldBlendMode);
 			renderer.__pushMaskObject(video);
-			// renderer.filterManager.pushObject (video);
+			renderer.__pushFilters(video);
 
 			var shader = renderer.__initShader(cast video.__worldShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
@@ -87,7 +87,7 @@ class Context3DVideo
 
 			renderer.__clearShader();
 
-			// renderer.filterManager.popObject (video);
+			renderer.__popFilters(video);
 			renderer.__popMaskObject(video);
 		}
 		#end

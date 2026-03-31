@@ -435,7 +435,7 @@ class Context3DTilemap
 		}
 
 		renderer.__pushMaskObject(tilemap);
-		// renderer.filterManager.pushObject (tilemap);
+		renderer.__pushFilters(tilemap);
 
 		var rect = Rectangle.__pool.get();
 		rect.setTo(0, 0, tilemap.__width, tilemap.__height);
@@ -445,8 +445,8 @@ class Context3DTilemap
 			tilemap.tileBlendModeEnabled, currentBlendMode, null);
 		flush(tilemap, renderer, currentBlendMode);
 
-		// renderer.filterManager.popObject (tilemap);
 		renderer.__popMaskRect();
+		renderer.__popFilters(tilemap);
 		renderer.__popMaskObject(tilemap);
 
 		Rectangle.__pool.release(rect);

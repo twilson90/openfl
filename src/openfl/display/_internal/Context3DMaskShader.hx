@@ -12,14 +12,17 @@ class Context3DMaskShader extends Shader
 {
 	public static var opaqueBitmapData:BitmapData = new BitmapData(1, 1, false, 0);
 
-	@:glFragmentSource("varying vec2 openfl_TextureCoordv;
+	@:glFragmentSource("
+		varying vec2 openfl_TextureCoordv;
 
 		void main(void) {
 
 			gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
 
-		}")
-	@:glVertexSource("attribute vec4 openfl_Position;
+		}
+	")
+	@:glVertexSource("
+		attribute vec4 openfl_Position;
 		attribute vec2 openfl_TextureCoord;
 		varying vec2 openfl_TextureCoordv;
 
@@ -31,7 +34,8 @@ class Context3DMaskShader extends Shader
 
 			gl_Position = openfl_Matrix * openfl_Position;
 
-		}")
+		}
+	")
 	public function new()
 	{
 		super();

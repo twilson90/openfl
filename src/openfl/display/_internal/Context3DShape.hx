@@ -34,7 +34,7 @@ class Context3DShape
 		{
 			renderer.__setBlendMode(shape.__worldBlendMode);
 			renderer.__pushMaskObject(shape);
-			// renderer.filterManager.pushObject (shape);
+			renderer.__pushFilters(shape);
 
 			Context3DGraphics.render(graphics, renderer);
 
@@ -72,7 +72,7 @@ class Context3DShape
 				renderer.__clearShader();
 			}
 
-			// renderer.filterManager.popObject (shape);
+			renderer.__popFilters(shape);
 			renderer.__popMaskObject(shape);
 		}
 	}

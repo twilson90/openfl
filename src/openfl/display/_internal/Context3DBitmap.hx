@@ -32,7 +32,7 @@ class Context3DBitmap
 
 			renderer.__setBlendMode(bitmap.__worldBlendMode);
 			renderer.__pushMaskObject(bitmap);
-			// renderer.filterManager.pushObject (bitmap);
+			renderer.__pushFilters(bitmap);
 
 			var shader = renderer.__initShader(cast bitmap.__worldShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
@@ -54,7 +54,7 @@ class Context3DBitmap
 
 			renderer.__clearShader();
 
-			// renderer.filterManager.popObject (bitmap);
+			renderer.__popFilters(bitmap);
 			renderer.__popMaskObject(bitmap);
 		}
 	}

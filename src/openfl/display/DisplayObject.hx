@@ -22,6 +22,7 @@ import openfl.ui.MouseCursor;
 import openfl.Vector;
 #if lime
 import lime.graphics.cairo.Cairo;
+import openfl.display3D.textures.TextureBase;
 #end
 #if (js && html5)
 import js.html.Element;

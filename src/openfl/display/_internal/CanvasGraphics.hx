@@ -292,21 +292,20 @@ class CanvasGraphics
 				return;
 			}
 		}
+		if (graphics.__useScale9Grid)
+		{
+			var scaledLeft = graphics.__getScale9GridPositionX(x);
+			var scaledTop = graphics.__getScale9GridPositionY(y);
+			var scaledRight = graphics.__getScale9GridPositionX(x + width);
+			var scaledBottom = graphics.__getScale9GridPositionY(y + height);
+
+			x = scaledLeft;
+			y = scaledTop;
+			width = scaledRight - scaledLeft;
+			height = scaledBottom - scaledTop;
+		}
 		if (width != 0.0 || height != 0.0)
 		{
-			if (graphics.__useScale9Grid)
-			{
-				var scaledLeft = graphics.__getScale9GridPositionX(x);
-				var scaledTop = graphics.__getScale9GridPositionY(y);
-				var scaledRight = graphics.__getScale9GridPositionX(x + width);
-				var scaledBottom = graphics.__getScale9GridPositionY(y + height);
-
-				x = scaledLeft;
-				y = scaledTop;
-				width = scaledRight - scaledLeft;
-				height = scaledBottom - scaledTop;
-			}
-
 			// flash doesn't draw the rectangle if both the width and height are zero
 			context.rect(x, y, width, height);
 		}

@@ -8,7 +8,8 @@ import openfl.utils.ByteArray;
 #end
 class GraphicsShader extends Shader
 {
-	@:glVertexHeader("attribute float openfl_Alpha;
+	@:glVertexHeader("
+		attribute float openfl_Alpha;
 		attribute vec4 openfl_ColorMultiplier;
 		attribute vec4 openfl_ColorOffset;
 		attribute vec4 openfl_Position;
@@ -22,8 +23,10 @@ class GraphicsShader extends Shader
 		varying vec4 openfl_VertexColorv;
 
 		uniform mat4 openfl_Matrix;
-		uniform bool openfl_HasColorTransform;")
-	@:glVertexBody("openfl_Alphav = openfl_Alpha;
+		uniform bool openfl_HasColorTransform;
+	")
+	@:glVertexBody("
+		openfl_Alphav = openfl_Alpha;
 		openfl_TextureCoordv = vec3(openfl_TextureCoord.x * openfl_TextureCoord.z, openfl_TextureCoord.y * openfl_TextureCoord.z, openfl_TextureCoord.z);
 
 		if (openfl_HasColorTransform) {
@@ -34,15 +37,19 @@ class GraphicsShader extends Shader
 		}
 		openfl_VertexColorv = openfl_VertexColor;
 
-		gl_Position = openfl_Matrix * openfl_Position;")
-	@:glVertexSource("#pragma header
+		gl_Position = openfl_Matrix * openfl_Position;
+	")
+	@:glVertexSource("
+		#pragma header
 
 		void main(void) {
 
 			#pragma body
 
-		}")
-	@:glFragmentHeader("varying float openfl_Alphav;
+		}
+	")
+	@:glFragmentHeader("
+		varying float openfl_Alphav;
 		varying vec4 openfl_ColorMultiplierv;
 		varying vec4 openfl_ColorOffsetv;
 		varying vec3 openfl_TextureCoordv;
@@ -142,7 +149,8 @@ class GraphicsShader extends Shader
 		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
 	")
 	#if emscripten
-	@:glFragmentSource("#pragma header
+	@:glFragmentSource("
+		#pragma header
 
 		void main(void) {
 
@@ -150,15 +158,18 @@ class GraphicsShader extends Shader
 
 			gl_FragColor = gl_FragColor.bgra;
 
-		}")
+		}
+	")
 	#else
-	@:glFragmentSource("#pragma header
+	@:glFragmentSource("
+		#pragma header
 
 		void main(void) {
 
 			#pragma body
 
-		}")
+		}
+	")
 	#end
 	public function new(code:ByteArray = null)
 	{
