@@ -1,19 +1,20 @@
 package openfl.display._internal;
 
 #if !flash
-import openfl.utils._internal.Float32Array;
 import openfl.display.BitmapData;
 import openfl.display.BlendMode;
 import openfl.display.OpenGLRenderer;
 import openfl.display.Shader;
 import openfl.display.TileContainer;
 import openfl.display.Tilemap;
-import openfl.display.Tileset;
 import openfl.display.Tileset.TileData;
+import openfl.display.Tileset;
 import openfl.display3D.Context3D;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
+import openfl.text.BitmapTextField;
+import openfl.utils._internal.Float32Array;
 #if gl_stats
 import openfl.display._internal.stats.Context3DStats;
 import openfl.display._internal.stats.DrawCallContext;
@@ -52,13 +53,7 @@ class Context3DTilemap
 
 	public static function buildBuffer(tilemap:Tilemap, renderer:OpenGLRenderer):Void
 	{
-		if (!tilemap.__renderable || tilemap.__group.__tiles.length == 0 || tilemap.__worldAlpha <= 0)
-		{
-			// TODO: Use dirty to perform sparse update of buffers?
-			// This is required here because `openfl.display.Tilemap` sets dirty on enter_frame
-			tilemap.__group.__dirty = false;
-			return;
-		}
+		if (!tilemap.__group.__dirty) return;
 
 		numTiles = 0;
 		vertexBufferData = (tilemap.__buffer != null) ? tilemap.__buffer.vertexBufferData : null;
@@ -312,7 +307,7 @@ class Context3DTilemap
 			var shader = renderer.__initShader(cast currentShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
 			renderer.applyBitmapData(currentBitmapData, tilemap.smoothing);
-			renderer.applyMatrix(renderer.__getMatrix(tilemap.__renderTransform, AUTO));
+			renderer.applyMatrix(renderer.__getMatrix(tilemap.__renderTransform, tilemap.pixelSnapping));
 
 			if (tilemap.tileAlphaEnabled)
 			{
@@ -336,6 +331,15 @@ class Context3DTilemap
 			else
 			{
 				renderer.applyColorTransform(tilemap.__worldColorTransform);
+			}
+
+			if (Std.isOfType(tilemap.parent, BitmapTextField))
+			{
+				var bmtf:BitmapTextField = cast tilemap.parent;
+				var color = bmtf.textColor == null ? 0xffffffff : bmtf.textColor;
+				var outlineColor = bmtf.outlineColor == null ? 0xff000000 : bmtf.outlineColor;
+				renderer.applyDistanceField(bmtf.font.distanceFieldType, bmtf.font.distanceRange, bmtf.weight, color, outlineColor,
+					bmtf.outlineWidth / bmtf.size);
 			}
 
 			renderer.updateShader();
@@ -386,6 +390,7 @@ class Context3DTilemap
 
 			#if gl_stats
 			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+			tilemap.__glDrawCalls++;
 			#end
 
 			renderer.__clearShader();
@@ -411,7 +416,10 @@ class Context3DTilemap
 
 	public static function render(tilemap:Tilemap, renderer:OpenGLRenderer):Void
 	{
-		if (!tilemap.__renderable || tilemap.__worldAlpha <= 0) return;
+		if (!tilemap.__renderable || tilemap.__group.__tiles.length == 0 || tilemap.__worldAlpha <= 0)
+		{
+			return;
+		}
 
 		context = renderer.__context3D;
 
@@ -435,7 +443,6 @@ class Context3DTilemap
 		}
 
 		renderer.__pushMaskObject(tilemap);
-		renderer.__pushFilters(tilemap);
 
 		var rect = Rectangle.__pool.get();
 		rect.setTo(0, 0, tilemap.__width, tilemap.__height);
@@ -446,7 +453,6 @@ class Context3DTilemap
 		flush(tilemap, renderer, currentBlendMode);
 
 		renderer.__popMaskRect();
-		renderer.__popFilters(tilemap);
 		renderer.__popMaskObject(tilemap);
 
 		Rectangle.__pool.release(rect);

@@ -34,7 +34,6 @@ class Context3DShape
 		{
 			renderer.__setBlendMode(shape.__worldBlendMode);
 			renderer.__pushMaskObject(shape);
-			renderer.__pushFilters(shape);
 
 			Context3DGraphics.render(graphics, renderer);
 
@@ -67,12 +66,12 @@ class Context3DShape
 
 				#if gl_stats
 				Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+				shape.__glDrawCalls++;
 				#end
 
 				renderer.__clearShader();
 			}
 
-			renderer.__popFilters(shape);
 			renderer.__popMaskObject(shape);
 		}
 	}
@@ -105,6 +104,7 @@ class Context3DShape
 
 				#if gl_stats
 				Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+				shape.__glDrawCalls++;
 				#end
 
 				renderer.__clearShader();

@@ -24,18 +24,20 @@ class GraphicsShader extends Shader
 
 		uniform mat4 openfl_Matrix;
 		uniform bool openfl_HasColorTransform;
+		uniform bool openfl_HasVertexColors;
 	")
 	@:glVertexBody("
 		openfl_Alphav = openfl_Alpha;
 		openfl_TextureCoordv = vec3(openfl_TextureCoord.x * openfl_TextureCoord.z, openfl_TextureCoord.y * openfl_TextureCoord.z, openfl_TextureCoord.z);
 
 		if (openfl_HasColorTransform) {
-
 			openfl_ColorMultiplierv = openfl_ColorMultiplier;
 			openfl_ColorOffsetv = openfl_ColorOffset / 255.0;
-
 		}
-		openfl_VertexColorv = openfl_VertexColor;
+
+		if (openfl_HasVertexColors) {
+			openfl_VertexColorv = openfl_VertexColor;
+		}
 
 		gl_Position = openfl_Matrix * openfl_Position;
 	")
@@ -58,7 +60,12 @@ class GraphicsShader extends Shader
 		uniform bool openfl_HasColorTransform;
         uniform int openfl_FillType;
         uniform float openfl_FocalPointRatio;
+		uniform bool openfl_HasVertexColors;
 		uniform sampler2D bitmap;
+
+		vec4 premultiply(vec4 c) {
+			return vec4(c.rgb * c.a, c.a);
+		}
 
 		vec4 openfl_baseColor()
 		{
@@ -66,7 +73,7 @@ class GraphicsShader extends Shader
 			if (openfl_FillType == 0)
 			{
 				// Solid Color
-				color = openfl_VertexColorv;
+				color = premultiply(openfl_VertexColorv.bgra);
 			}
 			else if (openfl_FillType == 1)
 			{

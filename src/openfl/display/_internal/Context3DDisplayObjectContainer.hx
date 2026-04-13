@@ -22,7 +22,6 @@ class Context3DDisplayObjectContainer
 		if (displayObjectContainer.__children.length > 0)
 		{
 			renderer.__pushMaskObject(displayObjectContainer);
-			renderer.__pushFilters(displayObjectContainer);
 
 			if (renderer.__stage != null)
 			{
@@ -45,7 +44,6 @@ class Context3DDisplayObjectContainer
 
 		if (displayObjectContainer.__children.length > 0)
 		{
-			renderer.__popFilters(displayObjectContainer);
 			renderer.__popMaskObject(displayObjectContainer);
 		}
 	}

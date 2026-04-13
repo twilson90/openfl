@@ -162,11 +162,16 @@ class Gradient
 
 	static private inline function arrayEquals<T>(a1:Array<T>, a2:Array<T>)
 	{
+		var equal = true;
 		for (i in 0...a1.length)
 		{
-			if (a1[i] != a2[i]) return false;
+			if (a1[i] != a2[i])
+			{
+				equal = false;
+				break;
+			}
 		}
-		return true;
+		return equal;
 	}
 
 	static private inline function matrixEquals(m1:Matrix, m2:Matrix)

@@ -6,6 +6,7 @@ import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
 #if !flash
 import openfl.display._internal.Context3DBuffer;
+import openfl.display.PixelSnapping;
 #end
 
 /**
@@ -78,13 +79,14 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 		smoothed when scaled.
 	**/
 	public var smoothing:Bool;
+
+	public var pixelSnapping:PixelSnapping;
 	#end
 
 	@:noCompletion private var __group:TileContainer;
 	@:noCompletion private var __tileset:Tileset;
 	#if !flash
 	@:noCompletion private var __buffer:Context3DBuffer;
-	@:noCompletion private var __bufferDirty:Bool;
 	@:noCompletion private var __height:Int;
 	@:noCompletion private var __width:Int;
 	#end
@@ -113,7 +115,7 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 
 		![A bitmap without smoothing.](/images/bitmap_smoothing_off.jpg) ![A bitmap with smoothing.](/images/bitmap_smoothing_on.jpg)
 	**/
-	public function new(width:Int, height:Int, tileset:Tileset = null, smoothing:Bool = true)
+	public function new(width:Int, height:Int, tileset:Tileset = null, pixelSnapping:PixelSnapping = null, smoothing:Bool = true)
 	{
 		super();
 
@@ -121,7 +123,6 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 		__drawableType = TILEMAP;
 		#end
 		__tileset = tileset;
-		this.smoothing = smoothing;
 
 		tileAlphaEnabled = true;
 		tileBlendModeEnabled = true;
@@ -134,9 +135,15 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 		__height = height;
 		#else
 		bitmapData = new BitmapData(width, height, true, 0);
-		this.smoothing = smoothing;
 		FlashRenderer.register(this);
 		#end
+
+		this.smoothing = smoothing;
+		if (pixelSnapping == null)
+		{
+			pixelSnapping = PixelSnapping.AUTO;
+		}
+		this.pixelSnapping = pixelSnapping;
 	}
 
 	/**
@@ -383,9 +390,7 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 			__setRenderDirty();
 		}
 	}
-	#end
 
-	#if !flash
 	@:noCompletion private override function __getBounds(rect:Rectangle, matrix:Matrix, exStroke:Bool = false):Void
 	{
 		var bounds = Rectangle.__pool.get();
@@ -396,9 +401,12 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 
 		Rectangle.__pool.release(bounds);
 	}
-	#end
 
-	#if !flash
+	@:noCompletion private override function __getRenderBounds(rect:Rectangle, matrix:Matrix):Void
+	{
+		__getBounds(rect, matrix);
+	}
+
 	@:noCompletion private override function __hitTest(x:Float, y:Float, shapeFlag:Bool, stack:Array<DisplayObject>, interactiveOnly:Bool,
 			hitObject:DisplayObject):Bool
 	{

@@ -10,21 +10,26 @@ import openfl.display._internal.Context3DMaskShader;
 import openfl.display._internal.Context3DSimpleButton;
 import openfl.display._internal.Context3DTextField;
 import openfl.display._internal.Context3DTilemap;
+import openfl.display._internal.Context3DAlphaMaskShader;
 import openfl.display._internal.Context3DVideo;
-import openfl.display._internal.ShaderBuffer;
 import openfl.display._internal.Gradient;
-// import openfl.display._internal.FilterManager;
-import openfl.utils.ObjectPool;
-import openfl.display3D.Context3DClearMask;
+import openfl.display._internal.ShaderBuffer;
 import openfl.display3D.Context3D;
+import openfl.display3D.Context3DClearMask;
 import openfl.display3D.textures.TextureBase;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
+import openfl.utils.ObjectPool;
 #if lime
-import lime.graphics.opengl.ext.KHR_debug;
 import lime.graphics.WebGLRenderContext;
+import lime.graphics.opengl.ext.KHR_debug;
 import lime.math.Matrix4;
+import lime.math.ARGB;
+#end
+#if gl_stats
+import openfl.display._internal.stats.Context3DStats;
+import openfl.display._internal.stats.DrawCallContext;
 #end
 
 /**
@@ -62,6 +67,14 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private static var __colorOffsetsValue:Array<Float> = [0, 0, 0, 0];
 	@:noCompletion private static var __emptyColorValue:Array<Float> = [0, 0, 0, 0];
 	@:noCompletion private static var __hasColorTransformValue:Array<Bool> = [false];
+	@:noCompletion private static var __hasVertexColorsValue:Array<Bool> = [false];
+	@:noCompletion private static var __distanceFieldTypeValue:Array<Int> = [0];
+	@:noCompletion private static var __distanceRangeValue:Array<Float> = [0];
+	@:noCompletion private static var __weightValue:Array<Float> = [0];
+	@:noCompletion private static var __fillColorValue:Array<Float> = [0, 0, 0, 0];
+	@:noCompletion private static var __outlineColorValue:Array<Float> = [0, 0, 0, 0];
+	@:noCompletion private static var __outlineWidthValue:Array<Float> = [0];
+
 	@:noCompletion private static var __scissorRectangle:Rectangle = new Rectangle();
 	@:noCompletion private static var __textureSizeValue:Array<Float> = [0, 0];
 	@:noCompletion private static var __fillTypeValue:Array<Int> = [0];
@@ -76,12 +89,12 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private static var __staticDefaultDisplayShader:DisplayObjectShader;
 	@:noCompletion private static var __staticDefaultGraphicsShader:GraphicsShader;
 	@:noCompletion private static var __staticMaskShader:Context3DMaskShader;
+	@:noCompletion private static var __staticAlphaMaskShader:Context3DAlphaMaskShader;
 
 	@:noCompletion private var __context3D:Context3D;
 	@:noCompletion private var __clipRects:Array<Rectangle>;
 	@:noCompletion private var __currentDisplayShader:Shader;
 	@:noCompletion private var __currentGraphicsShader:Shader;
-	@:noCompletion private var __currentRenderTarget:BitmapData;
 	@:noCompletion private var __currentShader:Shader;
 	@:noCompletion private var __currentShaderBuffer:ShaderBuffer;
 	@:noCompletion private var __defaultDisplayShader:DisplayObjectShader;
@@ -94,6 +107,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __gl:#if lime WebGLRenderContext #else Dynamic #end;
 	@:noCompletion private var __height:Int;
 	@:noCompletion private var __maskShader:Context3DMaskShader;
+	@:noCompletion private var __alphaMaskShader:Context3DAlphaMaskShader;
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __matrix:#if lime Matrix4 #else Dynamic #end;
 	@:noCompletion private var __maskObjects:Array<DisplayObject>;
 	@:noCompletion private var __numClipRects:Int;
@@ -173,15 +187,17 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		if (__staticDefaultDisplayShader == null) __staticDefaultDisplayShader = new DisplayObjectShader();
 		if (__staticDefaultGraphicsShader == null) __staticDefaultGraphicsShader = new GraphicsShader();
 		if (__staticMaskShader == null) __staticMaskShader = new Context3DMaskShader();
+		if (__staticAlphaMaskShader == null) __staticAlphaMaskShader = new Context3DAlphaMaskShader();
 
 		__defaultDisplayShader = __staticDefaultDisplayShader;
 		__defaultGraphicsShader = __staticDefaultGraphicsShader;
 		__defaultShader = __defaultDisplayShader;
+		__maskShader = __staticMaskShader;
+		__alphaMaskShader = __staticAlphaMaskShader;
 
 		__initShader(__defaultShader);
 
 		__scrollRectMasks = new ObjectPool<Shape>(function() return new Shape());
-		__maskShader = __staticMaskShader;
 	}
 
 	/**
@@ -327,6 +343,65 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		else if (__currentShader != null)
 		{
 			if (__currentShader.__hasColorTransform != null) __currentShader.__hasColorTransform.value = __hasColorTransformValue;
+		}
+	}
+
+	public function applyHasVertexColors(enabled:Bool):Void
+	{
+		__hasVertexColorsValue[0] = enabled;
+
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addBoolOverride("openfl_HasVertexColors", __hasVertexColorsValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__hasVertexColors != null) __currentShader.__hasVertexColors.value = __hasVertexColorsValue;
+		}
+	}
+
+	public function applyDistanceField(type:DistanceFieldType, distanceRange:Float, weight:Float, fillColor:ARGB, outlineColor:ARGB, outlineWidth:Float):Void
+	{
+		__distanceFieldTypeValue[0] = switch type
+		{
+			case DistanceFieldType.MSDF: 1;
+			case DistanceFieldType.SDF: 2;
+			case DistanceFieldType.PSDF: 3;
+			default: 0;
+		};
+		__distanceRangeValue[0] = distanceRange;
+
+		__fillColorValue[0] = fillColor.r / 255;
+		__fillColorValue[1] = fillColor.g / 255;
+		__fillColorValue[2] = fillColor.b / 255;
+		__fillColorValue[3] = fillColor.a / 255;
+
+		__outlineColorValue[0] = outlineColor.r / 255;
+		__outlineColorValue[1] = outlineColor.g / 255;
+		__outlineColorValue[2] = outlineColor.b / 255;
+		__outlineColorValue[3] = outlineColor.a / 255;
+
+		__outlineWidthValue[0] = outlineWidth;
+
+		__weightValue[0] = weight;
+
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addIntOverride("openfl_DistanceFieldType", __distanceFieldTypeValue);
+			__currentShaderBuffer.addFloatOverride("openfl_DistanceRange", __distanceRangeValue);
+			__currentShaderBuffer.addFloatOverride("openfl_Weight", __weightValue);
+			__currentShaderBuffer.addFloatOverride("openfl_FillColor", __fillColorValue);
+			__currentShaderBuffer.addFloatOverride("openfl_OutlineColor", __outlineColorValue);
+			__currentShaderBuffer.addFloatOverride("openfl_OutlineWidth", __outlineWidthValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__distanceFieldType != null) __currentShader.__distanceFieldType.value = __distanceFieldTypeValue;
+			if (__currentShader.__distanceRange != null) __currentShader.__distanceRange.value = __distanceRangeValue;
+			if (__currentShader.__weight != null) __currentShader.__weight.value = __weightValue;
+			if (__currentShader.__fillColor != null) __currentShader.__fillColor.value = __fillColorValue;
+			if (__currentShader.__outlineWidth != null) __currentShader.__outlineWidth.value = __outlineWidthValue;
+			if (__currentShader.__outlineColor != null) __currentShader.__outlineColor.value = __outlineColorValue;
 		}
 	}
 
@@ -532,6 +607,12 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			if (__currentShader.__texture != null) __currentShader.__texture.input = null;
 			if (__currentShader.__textureSize != null) __currentShader.__textureSize.value = null;
 			if (__currentShader.__hasColorTransform != null) __currentShader.__hasColorTransform.value = null;
+			if (__currentShader.__hasVertexColors != null) __currentShader.__hasVertexColors.value = null;
+			if (__currentShader.__distanceFieldType != null) __currentShader.__distanceFieldType.value = null;
+			if (__currentShader.__distanceRange != null) __currentShader.__distanceRange.value = null;
+			if (__currentShader.__fillColor != null) __currentShader.__fillColor.value = null;
+			if (__currentShader.__outlineColor != null) __currentShader.__outlineColor.value = null;
+			if (__currentShader.__outlineWidth != null) __currentShader.__outlineWidth.value = null;
 			if (__currentShader.__position != null) __currentShader.__position.value = null;
 			if (__currentShader.__matrix != null) __currentShader.__matrix.value = null;
 			if (__currentShader.__vertexColor != null) __currentShader.__vertexColor.value = null;
@@ -727,20 +808,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		}
 	}
 
-	@:noCompletion private override function __pushFilters(object:DisplayObject):Void
-	{
-		#if openfl_disable_cacheasbitmap
-		__filterManager.pushFilters(object);
-		#end
-	}
-
-	@:noCompletion private override function __popFilters(object:DisplayObject):Void
-	{
-		#if openfl_disable_cacheasbitmap
-		__filterManager.popFilters(object);
-		#end
-	}
-
 	@:noCompletion private override function __pushMaskRect(rect:Rectangle, transform:Matrix):Void
 	{
 		// TODO: Handle rotation?
@@ -901,6 +968,10 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	{
 		if (object == null) return;
 
+		#if gl_stats
+		object.__glDrawCalls = 0;
+		#end
+
 		switch (object.__drawableType)
 		{
 			case BITMAP_DATA:
@@ -926,6 +997,10 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private function __renderDrawableMask(object:IBitmapDrawable):Void
 	{
 		if (object == null) return;
+
+		#if gl_stats
+		object.__glDrawCalls = 0;
+		#end
 
 		switch (object.__drawableType)
 		{
@@ -979,6 +1054,11 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		if (shader.__textureCoord != null) __context3D.setVertexBufferAt(shader.__textureCoord.index, vertexBuffer, 3, FLOAT_2);
 		var indexBuffer = source.getIndexBuffer(__context3D);
 		__context3D.drawTriangles(indexBuffer);
+
+		#if gl_stats
+		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+		__defaultRenderTarget.__glDrawCalls++;
+		#end
 
 		if (cacheRTT != null)
 		{

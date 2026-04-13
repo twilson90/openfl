@@ -37,7 +37,6 @@ class Context3DVideo
 
 			renderer.__setBlendMode(video.__worldBlendMode);
 			renderer.__pushMaskObject(video);
-			renderer.__pushFilters(video);
 
 			var shader = renderer.__initShader(cast video.__worldShader, renderer.__defaultDisplayShader);
 			renderer.setShader(shader);
@@ -83,11 +82,11 @@ class Context3DVideo
 
 			#if gl_stats
 			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+			video.__glDrawCalls++;
 			#end
 
 			renderer.__clearShader();
 
-			renderer.__popFilters(video);
 			renderer.__popMaskObject(video);
 		}
 		#end
@@ -128,6 +127,7 @@ class Context3DVideo
 
 			#if gl_stats
 			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+			video.__glDrawCalls++;
 			#end
 
 			renderer.__clearShader();

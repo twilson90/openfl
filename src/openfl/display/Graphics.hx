@@ -88,6 +88,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __visible:Bool;
 	@:noCompletion private var __isHardwareDrawable:Bool;
 	@:noCompletion private var __isHardwareCompatible(get, never):Bool;
+	@:noCompletion private var __hasShaders(get, never):Bool;
 	// private var __cachedTexture:RenderTexture;
 	@:noCompletion private var __owner:DisplayObject;
 	@:noCompletion private var __width:Int;
@@ -102,9 +103,6 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __bitmapScaleX:Float;
 	@:noCompletion private var __bitmapScaleY:Float;
 	@:noCompletion private var __useScale9Grid:Bool;
-	#if gl_stats
-	@:noCompletion private var __glDrawCalls:Int = 0;
-	#end
 
 	@:noCompletion private function new(owner:DisplayObject)
 	{
@@ -2083,6 +2081,11 @@ import js.html.CanvasRenderingContext2D;
 		return false;
 		#end
 		return __isHardwareDrawable;
+	}
+
+	@:noCompletion private function get___hasShaders():Bool
+	{
+		return __usedShaderBuffers != null && __usedShaderBuffers.length > 0;
 	}
 }
 

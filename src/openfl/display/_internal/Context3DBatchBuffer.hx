@@ -101,7 +101,7 @@ class Context3DBatchBuffer
 		var minY = Math.POSITIVE_INFINITY;
 		var maxX = Math.NEGATIVE_INFINITY;
 		var maxY = Math.NEGATIVE_INFINITY;
-		var color = uint32toFloat32(ColorUtil.argbToGL(fill.color));
+		var color = uint32toFloat32(fill.color != null ? fill.color : 0);
 
 		var numIndices = indices.length;
 		var numVertices = Std.int(vertices.length / 2);

@@ -221,6 +221,14 @@ class Shader
 	@:noCompletion private var __glSourceDirty:Bool;
 	@:noCompletion private var __glVertexSource:String;
 	@:noCompletion private var __hasColorTransform:ShaderParameter<Bool>;
+	@:noCompletion private var __hasVertexColors:ShaderParameter<Bool>;
+	@:noCompletion private var __distanceFieldType:ShaderParameter<Int>;
+	@:noCompletion private var __distanceRange:ShaderParameter<Float>;
+	@:noCompletion private var __weight:ShaderParameter<Float>;
+	@:noCompletion private var __fillColor:ShaderParameter<Float>;
+	@:noCompletion private var __outlineColor:ShaderParameter<Float>;
+	@:noCompletion private var __outlineWidth:ShaderParameter<Float>;
+
 	@:noCompletion private var __inputBitmapData:Array<ShaderInput<BitmapData>>;
 	@:noCompletion private var __isGenerated:Bool;
 	@:noCompletion private var __matrix:ShaderParameter<Float>;
@@ -228,6 +236,7 @@ class Shader
 	@:noCompletion private var __paramBool:Array<ShaderParameter<Bool>>;
 	@:noCompletion private var __paramFloat:Array<ShaderParameter<Float>>;
 	@:noCompletion private var __paramInt:Array<ShaderParameter<Int>>;
+
 	@:noCompletion private var __position:ShaderParameter<Float>;
 	@:noCompletion private var __textureCoord:ShaderParameter<Float>;
 	@:noCompletion private var __texture:ShaderInput<BitmapData>;
@@ -324,6 +333,7 @@ class Shader
 		var gl = __context.gl;
 
 		var shader = gl.createShader(type);
+
 		gl.shaderSource(shader, source);
 		gl.compileShader(shader);
 		var shaderInfoLog = gl.getShaderInfoLog(shader);
@@ -486,10 +496,13 @@ class Shader
 		{
 			var gl = __context.gl;
 
+			var prefix = "";
 			#if (js && html5)
-			var prefix = (precisionHint == FULL ? "precision mediump float;\n" : "precision lowp float;\n");
+			prefix += "#version 300 es\n\n";
+			prefix += (precisionHint == FULL ? "precision mediump float;" : "precision lowp float;") + "\n\n";
+			glFragmentSource = "out vec4 fragColor;\n" + glFragmentSource;
 			#else
-			var prefix = "#ifdef GL_ES\n"
+			prefix += "#ifdef GL_ES\n"
 				+ (precisionHint == FULL ? "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
 					+ "precision highp float;\n"
 					+ "#else\n"
@@ -499,7 +512,19 @@ class Shader
 			#end
 
 			var vertex = prefix + glVertexSource;
+
 			var fragment = prefix + glFragmentSource;
+
+			#if (js && html5)
+			vertex = StringTools.replace(vertex, "attribute", "in");
+			vertex = StringTools.replace(vertex, "varying", "out");
+			vertex = StringTools.replace(vertex, "texture2D", "texture");
+			vertex = StringTools.replace(vertex, "textureCube", "texture");
+			fragment = StringTools.replace(fragment, "varying", "in");
+			fragment = StringTools.replace(fragment, "texture2D", "texture");
+			fragment = StringTools.replace(fragment, "textureCube", "texture");
+			fragment = StringTools.replace(fragment, "gl_FragColor", "fragColor");
+			#end
 
 			var id = vertex + fragment;
 
@@ -675,9 +700,13 @@ class Shader
 						parameter.__length = length;
 						__paramBool.push(parameter);
 
-						if (name == "openfl_HasColorTransform")
+						switch (name)
 						{
-							__hasColorTransform = parameter;
+							case "openfl_HasColorTransform":
+								__hasColorTransform = parameter;
+							case "openfl_HasVertexColors":
+								__hasVertexColors = parameter;
+							default:
 						}
 
 						Reflect.setField(__data, name, parameter);
@@ -693,9 +722,13 @@ class Shader
 						parameter.__length = length;
 						__paramInt.push(parameter);
 
-						if (name == "openfl_FillType")
+						switch (name)
 						{
-							__fillType = parameter;
+							case "openfl_FillType":
+								__fillType = parameter;
+							case "openfl_DistanceFieldType":
+								__distanceFieldType = parameter;
+							default:
 						}
 
 						Reflect.setField(__data, name, parameter);
@@ -718,15 +751,34 @@ class Shader
 						{
 							switch (name)
 							{
-								case "openfl_Alpha": __alpha = parameter;
-								case "openfl_ColorMultiplier": __colorMultiplier = parameter;
-								case "openfl_ColorOffset": __colorOffset = parameter;
-								case "openfl_Matrix": __matrix = parameter;
-								case "openfl_Position": __position = parameter;
-								case "openfl_TextureCoord": __textureCoord = parameter;
-								case "openfl_TextureSize": __textureSize = parameter;
-								case "openfl_VertexColor": __vertexColor = parameter;
-								case "openfl_FocalPointRatio": __focalPointRatio = parameter;
+								case "openfl_Alpha":
+									__alpha = parameter;
+								case "openfl_ColorMultiplier":
+									__colorMultiplier = parameter;
+								case "openfl_ColorOffset":
+									__colorOffset = parameter;
+								case "openfl_Matrix":
+									__matrix = parameter;
+								case "openfl_Position":
+									__position = parameter;
+								case "openfl_TextureCoord":
+									__textureCoord = parameter;
+								case "openfl_TextureSize":
+									__textureSize = parameter;
+								case "openfl_VertexColor":
+									__vertexColor = parameter;
+								case "openfl_FocalPointRatio":
+									__focalPointRatio = parameter;
+								case "openfl_DistanceRange":
+									__distanceRange = parameter;
+								case "openfl_Weight":
+									__weight = parameter;
+								case "openfl_FillColor":
+									__fillColor = parameter;
+								case "openfl_OutlineColor":
+									__outlineColor = parameter;
+								case "openfl_OutlineWidth":
+									__outlineWidth = parameter;
 								default:
 							}
 						}

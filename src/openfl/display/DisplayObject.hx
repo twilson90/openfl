@@ -22,7 +22,6 @@ import openfl.ui.MouseCursor;
 import openfl.Vector;
 #if lime
 import lime.graphics.cairo.Cairo;
-import openfl.display3D.textures.TextureBase;
 #end
 #if (js && html5)
 import js.html.Element;
@@ -1031,6 +1030,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __style:CSSStyleDeclaration;
 	@:noCompletion private var __opaqueBackgroundElement:Element;
 	#end
+	#if gl_stats
+	@:noCompletion private var __glDrawCalls:Int = 0;
+	#end
 
 	#if openfljs
 	@:noCompletion private static function __init__()
@@ -1494,6 +1496,11 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 			__graphics.__cleanup();
 		}
 
+		__cleanupCacheBitmap();
+	}
+
+	@:noCompletion private function __cleanupCacheBitmap()
+	{
 		if (__cacheBitmap != null)
 		{
 			__cacheBitmap.__cleanup();

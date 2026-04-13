@@ -782,10 +782,6 @@ class Context3DGraphics
 	{
 		if (!graphics.__visible || graphics.__commands.length == 0) return;
 
-		#if gl_stats
-		graphics.__glDrawCalls = 0;
-		#end
-
 		if ((graphics.__bitmap != null && !graphics.__dirty) || !graphics.__isHardwareCompatible)
 		{
 			renderer.__softwareRenderer.__pixelRatio = renderer.__pixelRatio;
@@ -857,7 +853,6 @@ class Context3DGraphics
 				{
 					var indexOffset = 0;
 					var strokeIndexOffset = 0;
-					var shaderBufferOffset = 0;
 					var stencilBase = renderer.__stencilReference;
 
 					var renderTransform = Matrix.__pool.get();
@@ -928,10 +923,13 @@ class Context3DGraphics
 								}
 								renderer.applyAlpha(graphics.__owner.__worldAlpha);
 								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
-								renderer.__updateShaderBuffer(shaderBufferOffset);
+								renderer.__updateShaderBuffer(indexOffset);
 								// needed if any uniform parameters have changed.
 								// TODO: check if shaderBuffer is dirty and only update it if so.
-								shaderBuffer.update(cast shader);
+								if (graphics.__owner.__renderDirty)
+								{
+									shaderBuffer.update(cast shader);
+								}
 							}
 							else if (bitmap != null)
 							{
@@ -956,19 +954,17 @@ class Context3DGraphics
 							{
 								renderer.setShader(shader);
 								renderer.applyGraphicsFillType(0);
+								renderer.applyHasVertexColors(true);
 								renderer.applyMatrix(uMatrix);
 								renderer.applyAlpha(graphics.__owner.__worldAlpha);
 								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
 								renderer.updateShader();
 							}
 
-							// drawElements(context, shader, buffer, indexOffset, numIndices, triCulling);
-
 							if (isTransparentStroke)
 							{
 								// draw a quad that encompasses the stroke so we can apply the stencil to it.
 								drawTransparentStroke(context, shader, buffer, strokeIndexOffset, 6, triCulling);
-								strokeIndexOffset += 6;
 
 								if (renderer.__stencilReference > 1)
 								{
@@ -999,8 +995,12 @@ class Context3DGraphics
 						renderer.__clearShader();
 
 						// shaderBufferOffset += numIndices;
-						shaderBufferOffset += numVertices;
 						indexOffset += numIndices;
+
+						if (isTransparentStroke)
+						{
+							strokeIndexOffset += 6;
+						}
 					}
 					Matrix.__pool.release(renderTransform);
 				}
@@ -1033,7 +1033,7 @@ class Context3DGraphics
 
 		#if gl_stats
 		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		graphics.__glDrawCalls++;
+		graphics.__owner.__glDrawCalls++;
 		#end
 
 		switch (triCulling)
@@ -1075,7 +1075,7 @@ class Context3DGraphics
 
 		#if gl_stats
 		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		graphics.__glDrawCalls++;
+		graphics.__owner.__glDrawCalls++;
 		#end
 
 		switch (triCulling)

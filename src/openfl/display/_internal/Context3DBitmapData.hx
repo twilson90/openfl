@@ -12,7 +12,9 @@ import openfl.display._internal.stats.DrawCallContext;
 #end
 @:access(openfl.display.BitmapData)
 @:access(openfl.display.Shader)
+@:access(openfl.display.IBitmapDrawable)
 @:access(openfl.display3D.Context3D)
+@:access(openfl.display3D.OpenGLRenderer)
 class Context3DBitmapData
 {
 	public static function renderDrawable(bitmapData:BitmapData, renderer:OpenGLRenderer):Void
@@ -38,11 +40,18 @@ class Context3DBitmapData
 		var indexBuffer = bitmapData.getIndexBuffer(context);
 		context.drawTriangles(indexBuffer);
 
-		#if gl_stats
-		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		#end
+		__incrementDrawCalls(renderer);
 
 		renderer.__clearShader();
+	}
+
+	private static inline function __incrementDrawCalls(renderer:OpenGLRenderer):Void
+	{
+		#if gl_stats
+		var target:IBitmapDrawable = renderer.__defaultRenderTarget == null ? renderer.__stage : renderer.__defaultRenderTarget;
+		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+		target.__glDrawCalls++;
+		#end
 	}
 
 	public static function renderDrawableMask(bitmapData:BitmapData, renderer:OpenGLRenderer):Void
@@ -62,9 +71,7 @@ class Context3DBitmapData
 		var indexBuffer = bitmapData.getIndexBuffer(context);
 		context.drawTriangles(indexBuffer);
 
-		#if gl_stats
-		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		#end
+		__incrementDrawCalls(renderer);
 
 		renderer.__clearShader();
 	}

@@ -10,6 +10,7 @@ import openfl.display3D.Context3DClearMask;
 import openfl.display3D.Context3D;
 import openfl.display3D.IndexBuffer3D;
 import openfl.display3D.VertexBuffer3D;
+import openfl.display3D.textures.RectangleTexture;
 import openfl.errors.Error;
 import openfl.filters.BitmapFilter;
 import openfl.geom.ColorTransform;
@@ -141,7 +142,6 @@ class BitmapData implements IBitmapDrawable
 	#if lime
 	@:noCompletion private static var __tempVector:Vector2 = new Vector2();
 	@:noCompletion private static var __fillRectRectangle:Rectangle = new Rectangle();
-	@:noCompletion private static var __IS_TEXTURE:Bool = false;
 	#end
 
 	/**
@@ -232,6 +232,9 @@ class BitmapData implements IBitmapDrawable
 	@:noCompletion private var __worldColorTransform:ColorTransform;
 	@:noCompletion private var __worldTransform:Matrix;
 	@:noCompletion private var __asset:Bool;
+	#if gl_stats
+	@:noCompletion private var __glDrawCalls:Int = 0;
+	#end
 
 	/**
 		Creates a BitmapData object with a specified width and height. If you specify a value for
@@ -269,7 +272,7 @@ class BitmapData implements IBitmapDrawable
 		__textureWidth = width;
 		__textureHeight = height;
 
-		if (width > 0 && height > 0 && !__IS_TEXTURE)
+		if (width > 0 && height > 0)
 		{
 			if (transparent)
 			{
@@ -1391,13 +1394,16 @@ class BitmapData implements IBitmapDrawable
 		if (texture == null) return null;
 
 		// prevent allocating of buffer
-		__IS_TEXTURE = true;
-		var bitmapData = new BitmapData(texture.__width, texture.__height, true, 0);
-		__IS_TEXTURE = false;
-
+		var bitmapData = new BitmapData(0, 0, true, 0);
+		bitmapData.width = texture.__width;
+		bitmapData.height = texture.__height;
+		bitmapData.__textureWidth = texture.__width;
+		bitmapData.__textureHeight = texture.__height;
+		bitmapData.rect.setTo(0, 0, texture.__width, texture.__height);
 		bitmapData.readable = false;
 		bitmapData.__texture = texture;
 		bitmapData.__textureContext = texture.__textureContext;
+		bitmapData.__isValid = true;
 		return bitmapData;
 	}
 
@@ -2257,8 +2263,13 @@ class BitmapData implements IBitmapDrawable
 
 		if (__texture == null || __textureContext != context.__context)
 		{
+			var optimizeForRenderToTexture = false;
+			if (__texture != null && Std.isOfType(__texture, RectangleTexture))
+			{
+				optimizeForRenderToTexture = cast(__texture, RectangleTexture).__optimizeForRenderToTexture;
+			}
 			__textureContext = context.__context;
-			__texture = context.createRectangleTexture(width, height, BGRA, false);
+			__texture = context.createRectangleTexture(width, height, BGRA, optimizeForRenderToTexture);
 
 			// context.__bindGLTexture2D (__texture);
 			// gl.texParameteri (gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

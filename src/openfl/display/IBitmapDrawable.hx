@@ -31,6 +31,9 @@ interface IBitmapDrawable
 	@:noCompletion private function __updateTransforms(overrideTransform:Matrix = null):Void;
 	@:noCompletion private var __mask:DisplayObject;
 	@:noCompletion private var __scrollRect:Rectangle;
+	#if gl_stats
+	@:noCompletion private var __glDrawCalls:Int;
+	#end
 }
 #else
 typedef IBitmapDrawable = flash.display.IBitmapDrawable;

@@ -385,44 +385,47 @@ class Tile
 	@:noCompletion private function __getBounds(result:Rectangle, matrix:Matrix):Void
 	{
 		#if flash
-		function __transform(rect:Rectangle, m:Matrix):Void
-		{
-			var tx0 = m.a * rect.x + m.c * rect.y;
-			var tx1 = tx0;
-			var ty0 = m.b * rect.x + m.d * rect.y;
-			var ty1 = ty0;
-
-			var tx = m.a * (rect.x + rect.width) + m.c * rect.y;
-			var ty = m.b * (rect.x + rect.width) + m.d * rect.y;
-
-			if (tx < tx0) tx0 = tx;
-			if (ty < ty0) ty0 = ty;
-			if (tx > tx1) tx1 = tx;
-			if (ty > ty1) ty1 = ty;
-
-			tx = m.a * (rect.x + rect.width) + m.c * (rect.y + rect.height);
-			ty = m.b * (rect.x + rect.width) + m.d * (rect.y + rect.height);
-
-			if (tx < tx0) tx0 = tx;
-			if (ty < ty0) ty0 = ty;
-			if (tx > tx1) tx1 = tx;
-			if (ty > ty1) ty1 = ty;
-
-			tx = m.a * rect.x + m.c * (rect.y + rect.height);
-			ty = m.b * rect.x + m.d * (rect.y + rect.height);
-
-			if (tx < tx0) tx0 = tx;
-			if (ty < ty0) ty0 = ty;
-			if (tx > tx1) tx1 = tx;
-			if (ty > ty1) ty1 = ty;
-
-			rect.setTo(tx0 + m.tx, ty0 + m.ty, tx1 - tx0, ty1 - ty0);
-		}
 		__transform(result, matrix);
 		#else
 		result.__transform(result, matrix);
 		#end
 	}
+
+	#if flash
+	@:noCompletion private static function __transform(rect:Rectangle, m:Matrix):Void
+	{
+		var tx0 = m.a * rect.x + m.c * rect.y;
+		var tx1 = tx0;
+		var ty0 = m.b * rect.x + m.d * rect.y;
+		var ty1 = ty0;
+
+		var tx = m.a * (rect.x + rect.width) + m.c * rect.y;
+		var ty = m.b * (rect.x + rect.width) + m.d * rect.y;
+
+		if (tx < tx0) tx0 = tx;
+		if (ty < ty0) ty0 = ty;
+		if (tx > tx1) tx1 = tx;
+		if (ty > ty1) ty1 = ty;
+
+		tx = m.a * (rect.x + rect.width) + m.c * (rect.y + rect.height);
+		ty = m.b * (rect.x + rect.width) + m.d * (rect.y + rect.height);
+
+		if (tx < tx0) tx0 = tx;
+		if (ty < ty0) ty0 = ty;
+		if (tx > tx1) tx1 = tx;
+		if (ty > ty1) ty1 = ty;
+
+		tx = m.a * rect.x + m.c * (rect.y + rect.height);
+		ty = m.b * rect.x + m.d * (rect.y + rect.height);
+
+		if (tx < tx0) tx0 = tx;
+		if (ty < ty0) ty0 = ty;
+		if (tx > tx1) tx1 = tx;
+		if (ty > ty1) ty1 = ty;
+
+		rect.setTo(tx0 + m.tx, ty0 + m.ty, tx1 - tx0, ty1 - ty0);
+	}
+	#end
 
 	/**
 		Evaluates the bounding box of the tile to see if it overlaps or
