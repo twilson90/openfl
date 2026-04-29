@@ -333,15 +333,6 @@ class Context3DTilemap
 				renderer.applyColorTransform(tilemap.__worldColorTransform);
 			}
 
-			if (Std.isOfType(tilemap.parent, BitmapTextField))
-			{
-				var bmtf:BitmapTextField = cast tilemap.parent;
-				var color = bmtf.textColor == null ? 0xffffffff : bmtf.textColor;
-				var outlineColor = bmtf.outlineColor == null ? 0xff000000 : bmtf.outlineColor;
-				renderer.applyDistanceField(bmtf.font.distanceFieldType, bmtf.font.distanceRange, bmtf.weight, color, outlineColor,
-					bmtf.outlineWidth / bmtf.size);
-			}
-
 			renderer.updateShader();
 
 			var vertexBuffer = tilemap.__buffer.vertexBuffer;

@@ -1,5 +1,7 @@
 package openfl.text;
 
+import openfl.display._internal.FlashRenderer;
+import openfl.display._internal.FlashRenderer.IDisplayObject;
 import flash.display.Bitmap;
 import flash.display.BitmapData;
 import flash.display.Graphics;
@@ -16,11 +18,58 @@ import openfl.display.PixelSnapping;
 import openfl.display.Tileset;
 import openfl.display.Tilemap;
 import openfl.display.Tile;
+import openfl.display.DistanceFieldType;
+#if lime
+import lime.math.ARGB;
+#end
+#if !flash
+import flash.display.DisplayObjectShader;
+
+class BitmapTextFieldShader extends DisplayObjectShader
+{
+	@:glFragmentHeader("
+		uniform int distanceFieldType;
+		uniform float distanceRange;
+		uniform float weight;
+		uniform vec4 fillColor;
+		uniform vec4 outlineColor;
+		uniform float outlineWidth;
+
+		float median(vec3 rgb) {
+			return max(min(rgb.r, rgb.g), min(max(rgb.r, rgb.g), rgb.b));
+		}
+	")
+	@:glFragmentBody("
+		vec4 color = openfl_baseColor();
+
+		if (distanceFieldType != 0) {
+			float sd = median(color.rgb) - 0.5;
+			float dist = sd * distanceRange;
+			float w = fwidth(dist);
+			float base = 1.0 - weight;
+			float inner = smoothstep(base - w, base + w, dist);
+			float o = min(outlineWidth / distanceRange, 1.0);
+			float outer = smoothstep(base - w - o, base + w - o, dist);
+			float outline = outer - inner;
+			vec4 fillCol = fillColor * inner;
+			vec4 outlineCol = outlineColor * outline;
+			color = outlineCol + fillCol * (1.0 - outline);
+		}
+
+		gl_FragColor = openfl_applyColorModifier(color);
+	")
+	public function new()
+	{
+		super();
+	}
+}
+#end
 
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.geom.ColorTransform)
-class BitmapTextField extends Sprite
+@:access(openfl.display.Tilemap)
+class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 {
 	static private var tempColorTransform:ColorTransform = new ColorTransform();
 
@@ -86,6 +135,10 @@ class BitmapTextField extends Sprite
 		this.text = text;
 		this.pixelSnapping = pixelSnapping;
 		this.smoothing = smoothing;
+
+		#if flash
+		FlashRenderer.register(this);
+		#end
 	}
 
 	private function set_textColor(value:UInt):UInt
@@ -262,6 +315,11 @@ class BitmapTextField extends Sprite
 		if (__tilemap == null)
 		{
 			__tilemap = new Tilemap(w, h, font.tileset, smoothing);
+			#if flash
+			FlashRenderer.unregister(__tilemap);
+			#else
+			__tilemap.shader = new BitmapTextFieldShader();
+			#end
 			addChild(__tilemap);
 		}
 		else
@@ -282,12 +340,22 @@ class BitmapTextField extends Sprite
 		}
 		else
 		{
+			#if flash
+			tempColorTransform.redMultiplier = 1.0;
+			tempColorTransform.greenMultiplier = 1.0;
+			tempColorTransform.blueMultiplier = 1.0;
+			tempColorTransform.alphaMultiplier = 1.0;
+			tempColorTransform.redOffset = 0;
+			tempColorTransform.greenOffset = 0;
+			tempColorTransform.blueOffset = 0;
+			tempColorTransform.alphaOffset = 0;
+			#else
 			tempColorTransform.__identity();
+			#end
 		}
 
 		__tilemap.transform.colorTransform = tempColorTransform;
 		__tilemap.pixelSnapping = pixelSnapping;
-		// __tilemap.shader = __defaultBitmapTextFieldShader;
 
 		if (size > 0)
 		{
@@ -378,13 +446,43 @@ class BitmapTextField extends Sprite
 			}
 		}
 
+		#if !flash
+		var shader:BitmapTextFieldShader = cast __tilemap.shader;
+		var fillColor:ARGB = this.textColor == null ? 0xffffffff : this.textColor;
+		var outlineColor:ARGB = this.outlineColor == null ? 0xff000000 : this.outlineColor;
+
+		shader.distanceFieldType.value = [
+			switch font.distanceFieldType
+			{
+				case DistanceFieldType.MSDF:
+					1;
+				case DistanceFieldType.SDF:
+					2;
+				case DistanceFieldType.PSDF:
+					3;
+				default:
+					0;
+			}
+		];
+		shader.distanceRange.value = [font.distanceRange];
+		shader.fillColor.value = [fillColor.r / 255, fillColor.g / 255, fillColor.b / 255, fillColor.a / 255];
+		shader.outlineColor.value = [
+			outlineColor.r / 255,
+			outlineColor.g / 255,
+			outlineColor.b / 255,
+			outlineColor.a / 255
+		];
+		shader.outlineWidth.value = [outlineWidth / size];
+		shader.weight.value = [weight];
+		#end
+
 		__graphicsDirty = false;
 	}
 
 	#if !flash
-	override function set_width(value:Float):Float
+	@:noCompletion private override function set_width(value:Float):Float
 	#else
-	@:setter(width) function set_width(value:Float):Void
+	#if (haxe_ver >= 4.3) override #else @:setter(width) #end private function set_width(value:Float):#if (haxe_ver >= 4.3) Float #else Void #end
 	#end
 	{
 		if (value != width)
@@ -392,15 +490,15 @@ class BitmapTextField extends Sprite
 			__fieldWidth = value;
 			__layoutDirty = true;
 		}
-		#if !flash
+		#if (haxe_ver >= 4.3)
 		return value;
 		#end
 	}
 
 	#if !flash
-	override function set_height(value:Float):Float
+	@:noCompletion private override function set_height(value:Float):Float
 	#else
-	@:setter(height) function set_height(value:Float):Void
+	#if (haxe_ver >= 4.3) override #else @:setter(height) #end private function set_height(value:Float):#if (haxe_ver >= 4.3) Float #else Void #end
 	#end
 	{
 		if (value != height)
@@ -408,7 +506,7 @@ class BitmapTextField extends Sprite
 			__fieldHeight = value;
 			__layoutDirty = true;
 		}
-		#if !flash
+		#if (haxe_ver >= 4.3)
 		return value;
 		#end
 	}
@@ -626,10 +724,17 @@ class BitmapTextField extends Sprite
 		{
 			__graphicsDirty = true;
 		}
-
 		return smoothing = value;
 	}
 
+	#if flash
+	@:noCompletion private function __renderFlash():Void
+	{
+		__updateLayout();
+		__updateGraphics();
+		__tilemap.__renderFlash();
+	}
+	#else
 	@:noCompletion private override function __getBounds(rect:Rectangle, matrix:Matrix, exStroke:Bool = false):Void
 	{
 		__updateLayout();
@@ -654,4 +759,5 @@ class BitmapTextField extends Sprite
 		__updateGraphics();
 		super.__enterFrame(deltaTime);
 	}
+	#end
 }

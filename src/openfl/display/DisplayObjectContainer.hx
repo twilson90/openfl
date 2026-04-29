@@ -745,6 +745,7 @@ class DisplayObjectContainer extends InteractiveObject
 		{
 			// unlike visual bounds, we cannot skip children with zero scale on just 1 axis. A child with scaleY == 0 may still have width that we cannot ignore.
 			if (child.__scaleX == 0 && child.__scaleY == 0) continue;
+			// if (child.__isMask) continue;
 
 			DisplayObject.__calculateAbsoluteTransform(child.__transform, matrix, childWorldTransform);
 

@@ -38,9 +38,6 @@ class BitmapFilterShader extends Shader
 		uniform sampler2D openfl_Texture;
 		uniform vec2 openfl_TextureSize;
 	")
-	@:glFragmentBody("
-		gl_FragColor = texture2D (openfl_Texture, openfl_TextureCoordv);
-	")
 	#if emscripten
 	@:glFragmentSource("
 		#pragma header

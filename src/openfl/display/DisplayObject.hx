@@ -13,6 +13,7 @@ import openfl.events.MouseEvent;
 import openfl.events.RenderEvent;
 import openfl.events.TouchEvent;
 import openfl.filters.BitmapFilter;
+import openfl.filters.AlphaMaskFilter;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Point;
@@ -1024,6 +1025,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __worldZ:Int;
 	@:noCompletion private var __localBounds:Rectangle;
 	@:noCompletion private var __localBoundsDirty:Bool;
+	@:noCompletion private var __alphaMaskFilter:AlphaMaskFilter;
+	@:noCompletion private var __hasAlphaMask:Bool;
+
 	#if (js && html5)
 	@:noCompletion private var __canvas:CanvasElement;
 	@:noCompletion private var __context:CanvasRenderingContext2D;
@@ -1496,10 +1500,10 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 			__graphics.__cleanup();
 		}
 
-		__cleanupCacheBitmap();
+		__cleanUpCacheBitmap();
 	}
 
-	@:noCompletion private function __cleanupCacheBitmap()
+	@:noCompletion private function __cleanUpCacheBitmap()
 	{
 		if (__cacheBitmap != null)
 		{
@@ -1687,10 +1691,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	{
 		if (__scrollRect == null)
 		{
-			if (__graphics != null)
-			{
-				__graphics.__getBounds(rect, matrix);
-			}
+			__getBounds(rect, matrix);
 		}
 		else
 		{
@@ -2000,6 +2001,29 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 				__worldScale9Grid = __scale9Grid;
 			}
 
+			var dirtyShader = false;
+			if (__worldShader != null && __worldShader.__dirtyGL)
+			{
+				dirtyShader = true;
+				__worldShader.__dirtyGL = false;
+			}
+
+			if (__graphics != null && __graphics.__usedShaderBuffers != null && __graphics.__usedShaderBuffers.length > 0)
+			{
+				for (shaderBuffer in __graphics.__usedShaderBuffers)
+				{
+					if (shaderBuffer.shader.__dirtyGL)
+					{
+						dirtyShader = true;
+						shaderBuffer.shader.__dirtyGL = false;
+					}
+				}
+			}
+			if (dirtyShader)
+			{
+				__setRenderDirty();
+			}
+
 			// if (updateChildren && __renderDirty) {
 
 			// __renderDirty = false;
@@ -2065,16 +2089,12 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 		if (__mask != null)
 		{
-			__mask.__isMask = false;
-			__mask.__maskTarget = null;
 			__mask.__setTransformDirty();
 			__mask.__setRenderDirty();
 		}
 
 		if (value != null)
 		{
-			value.__isMask = true;
-			value.__maskTarget = this;
 			value.__setWorldTransformInvalid();
 		}
 
@@ -2242,6 +2262,18 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 			// a single mask cannot be applied to more than one display object,
 			// so if the new mask already has a target, remove the mask
 			value.__maskTarget.mask = null;
+		}
+
+		if (__mask != null)
+		{
+			__mask.__isMask = false;
+			__mask.__maskTarget = null;
+		}
+
+		if (value != null)
+		{
+			value.__isMask = true;
+			value.__maskTarget = this;
 		}
 
 		__setMask(value);

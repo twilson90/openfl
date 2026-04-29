@@ -21,6 +21,11 @@ class FlashRenderer
 		instances[renderObject] = true;
 	}
 
+	public static function unregister(renderObject:IDisplayObject):Void
+	{
+		instances.remove(renderObject);
+	}
+
 	private static function render(_):Void
 	{
 		for (instance in instances)

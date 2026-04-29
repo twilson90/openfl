@@ -1389,7 +1389,6 @@ class CairoGraphics
 
 			var offset = Point.__pool.get();
 			graphics.__calculateRenderOffset(offset);
-			trace(offset.x, offset.y);
 			cairo.translate(-offset.x, -offset.y);
 
 			processCommands(renderer);

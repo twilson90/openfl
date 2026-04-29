@@ -393,8 +393,8 @@ import js.html.CanvasRenderingContext2D;
 	{
 		if (shader != null)
 		{
-			if (__usedShaderBuffers == null) __usedShaderBuffers = new List<ShaderBuffer>();
 			#if lime
+			if (__usedShaderBuffers == null) __usedShaderBuffers = new List<ShaderBuffer>();
 			var shaderBuffer = ShaderBuffer.__pool.get();
 			__usedShaderBuffers.add(shaderBuffer);
 			shaderBuffer.update(cast shader);
@@ -2057,7 +2057,7 @@ import js.html.CanvasRenderingContext2D;
 	{
 		if (value && __owner != null)
 		{
-			@:privateAccess __owner.__setRenderDirty();
+			__owner.__setRenderDirty();
 		}
 
 		if (value)
@@ -2077,7 +2077,7 @@ import js.html.CanvasRenderingContext2D;
 		#elseif (openfl_force_hw_graphics || force_hw_graphics)
 		return true;
 		#end
-		#if openfl_gl_graphics_use_software
+		#if openfl_disable_gl_graphics
 		return false;
 		#end
 		return __isHardwareDrawable;

@@ -10,11 +10,20 @@ class Context3DSimpleButton
 {
 	public static function renderDrawable(simpleButton:SimpleButton, renderer:OpenGLRenderer):Void
 	{
+		renderer.__updateCacheBitmap(simpleButton, false);
+
 		if (!simpleButton.__renderable || simpleButton.__worldAlpha <= 0 || simpleButton.__currentState == null) return;
 
-		renderer.__pushMaskObject(simpleButton);
-		renderer.__renderDrawable(simpleButton.__currentState);
-		renderer.__popMaskObject(simpleButton);
+		if (simpleButton.__cacheBitmap != null && !simpleButton.__isCacheBitmapRender)
+		{
+			Context3DBitmap.render(simpleButton.__cacheBitmap, renderer);
+		}
+		else
+		{
+			renderer.__pushMaskObject(simpleButton);
+			renderer.__renderDrawable(simpleButton.__currentState);
+			renderer.__popMaskObject(simpleButton);
+		}
 
 		renderer.__renderEvent(simpleButton);
 	}

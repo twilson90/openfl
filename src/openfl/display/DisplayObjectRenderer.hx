@@ -8,6 +8,7 @@ import openfl.display.Tilemap;
 import openfl.events.EventDispatcher;
 import openfl.events.RenderEvent;
 import openfl.filters.ShaderFilter;
+import openfl.filters.AlphaMaskFilter;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Point;
@@ -279,10 +280,22 @@ class DisplayObjectRenderer extends EventDispatcher
 		#end
 		if (renderCacheBitmap)
 		{
+			#if openfl_disable_alpha_mask
+			var hasAlphaMask = false;
+			#else
+			var hasAlphaMask = displayObject.__mask != null
+				&& (displayObject.__mask.__cacheAsBitmap || Std.isOfType(displayObject.__mask, Bitmap));
+			#end
+
+			if (displayObject.__hasAlphaMask != hasAlphaMask)
+			{
+				displayObject.__cleanUpCacheBitmap();
+			}
+
 			var rect:Rectangle = null;
 
-			var needRender = (displayObject.__cacheBitmap == null
-				|| (displayObject.__renderDirty && (force || (displayObject.__children != null && displayObject.__children.length > 0))));
+			var needRender = displayObject.__cacheBitmap == null
+				|| (displayObject.__renderDirty && (force || (displayObject.__children != null && displayObject.__children.length > 0)));
 			var softwareDirty = needRender
 				|| (displayObject.__graphics != null && displayObject.__graphics.__softwareDirty)
 				|| !displayObject.__cacheBitmapColorTransform.__equals(colorTransform, true);
@@ -310,8 +323,22 @@ class DisplayObjectRenderer extends EventDispatcher
 				if (hardwareDirty && renderType == OPENGL) needRender = true;
 			}
 
+			var alphaMask = hasAlphaMask ? displayObject.__mask : null;
 			var updateTransform = (needRender || !displayObject.__cacheBitmap.__worldTransform.equals(displayObject.__worldTransform));
-			var hasFilters = #if !openfl_disable_filters displayObject.__filters != null #else false #end;
+			var hasFilters = #if !openfl_disable_filters displayObject.__filters != null || hasAlphaMask #else false #end;
+			var filters = hasFilters ? displayObject.__filters : null;
+			if (hasAlphaMask)
+			{
+				filters = filters != null ? filters.copy() : [];
+				if (displayObject.__alphaMaskFilter == null) displayObject.__alphaMaskFilter = new AlphaMaskFilter();
+				displayObject.__alphaMaskFilter.mask = displayObject.__mask;
+				filters.push(displayObject.__alphaMaskFilter);
+				// to allow mask to render need to set mask state to false, restore later.
+				displayObject.__mask.__isMask = false;
+				displayObject.__mask = null;
+				if (updateTransform) needRender = true;
+			}
+			displayObject.__hasAlphaMask = hasAlphaMask;
 
 			#if !openfl_enable_cacheasbitmap
 			if (renderer.__type == DOM && !hasFilters)
@@ -325,7 +352,7 @@ class DisplayObjectRenderer extends EventDispatcher
 				var affineChanged:Bool = updateTransform
 					&& __affineChanged(displayObject.__cacheBitmap.__worldTransform, displayObject.__worldTransform);
 
-				for (filter in displayObject.__filters)
+				for (filter in filters)
 				{
 					if (filter.__renderDirty)
 					{
@@ -478,7 +505,7 @@ class DisplayObjectRenderer extends EventDispatcher
 				{
 					ColorTransform.__pool.release(colorTransform);
 
-					displayObject.__cleanupCacheBitmap();
+					displayObject.__cleanUpCacheBitmap();
 					displayObject.__cacheBitmapRenderer = null;
 
 					if (displayObject.__drawableType == TEXT_FIELD)
@@ -531,6 +558,7 @@ class DisplayObjectRenderer extends EventDispatcher
 			displayObject.__cacheBitmap.__worldAlpha = displayObject.__worldAlpha;
 			displayObject.__cacheBitmap.__worldBlendMode = displayObject.__worldBlendMode;
 			displayObject.__cacheBitmap.__worldShader = displayObject.__worldShader;
+			displayObject.__cacheBitmap.__worldColorTransform.__copyFrom(displayObject.__worldColorTransform);
 			// displayObject.__cacheBitmap.__scrollRect = displayObject.__scrollRect;
 			// displayObject.__cacheBitmap.filters = displayObject.filters;
 
@@ -624,7 +652,7 @@ class DisplayObjectRenderer extends EventDispatcher
 						var needSecondBitmapData = true;
 						var needCopyOfOriginal = false;
 
-						for (filter in displayObject.__filters)
+						for (filter in filters)
 						{
 							if (filter.__preserveObject)
 							{
@@ -660,7 +688,7 @@ class DisplayObjectRenderer extends EventDispatcher
 						var shader:Shader;
 						var cacheBitmap:BitmapData;
 
-						for (filter in displayObject.__filters)
+						for (filter in filters)
 						{
 							if (filter.__preserveObject)
 							{
@@ -720,7 +748,7 @@ class DisplayObjectRenderer extends EventDispatcher
 						var needSecondBitmapData = false;
 						var needCopyOfOriginal = false;
 
-						for (filter in displayObject.__filters)
+						for (filter in filters)
 						{
 							if (filter.__needSecondBitmapData)
 							{
@@ -777,7 +805,7 @@ class DisplayObjectRenderer extends EventDispatcher
 						var cacheBitmap:BitmapData;
 						var lastBitmap:BitmapData;
 
-						for (filter in displayObject.__filters)
+						for (filter in filters)
 						{
 							if (filter.__preserveObject)
 							{
@@ -829,6 +857,12 @@ class DisplayObjectRenderer extends EventDispatcher
 				displayObject.__isCacheBitmapRender = false;
 			}
 
+			if (hasAlphaMask)
+			{
+				displayObject.__mask = alphaMask;
+				displayObject.__mask.__isMask = true;
+			}
+
 			if (updateTransform || needRender)
 			{
 				Rectangle.__pool.release(rect);
@@ -844,7 +878,7 @@ class DisplayObjectRenderer extends EventDispatcher
 				domRenderer.__renderDrawableClear(displayObject.__cacheBitmap);
 			}
 
-			displayObject.__cleanupCacheBitmap();
+			displayObject.__cleanUpCacheBitmap();
 			displayObject.__cacheBitmapColorTransform = null;
 			displayObject.__cacheBitmapRenderer = null;
 

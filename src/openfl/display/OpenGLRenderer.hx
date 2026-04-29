@@ -10,7 +10,6 @@ import openfl.display._internal.Context3DMaskShader;
 import openfl.display._internal.Context3DSimpleButton;
 import openfl.display._internal.Context3DTextField;
 import openfl.display._internal.Context3DTilemap;
-import openfl.display._internal.Context3DAlphaMaskShader;
 import openfl.display._internal.Context3DVideo;
 import openfl.display._internal.Gradient;
 import openfl.display._internal.ShaderBuffer;
@@ -68,16 +67,11 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private static var __emptyColorValue:Array<Float> = [0, 0, 0, 0];
 	@:noCompletion private static var __hasColorTransformValue:Array<Bool> = [false];
 	@:noCompletion private static var __hasVertexColorsValue:Array<Bool> = [false];
-	@:noCompletion private static var __distanceFieldTypeValue:Array<Int> = [0];
-	@:noCompletion private static var __distanceRangeValue:Array<Float> = [0];
-	@:noCompletion private static var __weightValue:Array<Float> = [0];
-	@:noCompletion private static var __fillColorValue:Array<Float> = [0, 0, 0, 0];
-	@:noCompletion private static var __outlineColorValue:Array<Float> = [0, 0, 0, 0];
-	@:noCompletion private static var __outlineWidthValue:Array<Float> = [0];
 
 	@:noCompletion private static var __scissorRectangle:Rectangle = new Rectangle();
 	@:noCompletion private static var __textureSizeValue:Array<Float> = [0, 0];
 	@:noCompletion private static var __fillTypeValue:Array<Int> = [0];
+	@:noCompletion private static var __linearValue:Array<Int> = [0];
 	@:noCompletion private static var __focalPointRatioValue:Array<Float> = [0];
 
 	/**
@@ -86,10 +80,9 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@SuppressWarnings("checkstyle:Dynamic")
 	public var gl:#if lime WebGLRenderContext #else Dynamic #end;
 
-	@:noCompletion private static var __staticDefaultDisplayShader:DisplayObjectShader;
-	@:noCompletion private static var __staticDefaultGraphicsShader:GraphicsShader;
+	@:noCompletion private static var __staticDefaultDisplayShader:DisplayObjectShader.DefaultDisplayObjectShader;
+	@:noCompletion private static var __staticDefaultGraphicsShader:GraphicsShader.DefaultGraphicsShader;
 	@:noCompletion private static var __staticMaskShader:Context3DMaskShader;
-	@:noCompletion private static var __staticAlphaMaskShader:Context3DAlphaMaskShader;
 
 	@:noCompletion private var __context3D:Context3D;
 	@:noCompletion private var __clipRects:Array<Rectangle>;
@@ -97,8 +90,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private var __currentGraphicsShader:Shader;
 	@:noCompletion private var __currentShader:Shader;
 	@:noCompletion private var __currentShaderBuffer:ShaderBuffer;
-	@:noCompletion private var __defaultDisplayShader:DisplayObjectShader;
-	@:noCompletion private var __defaultGraphicsShader:GraphicsShader;
+	@:noCompletion private var __defaultDisplayShader:DisplayObjectShader.DefaultDisplayObjectShader;
+	@:noCompletion private var __defaultGraphicsShader:GraphicsShader.DefaultGraphicsShader;
 	@:noCompletion private var __defaultRenderTarget:BitmapData;
 	@:noCompletion private var __defaultShader:Shader;
 	@:noCompletion private var __displayHeight:Int;
@@ -107,7 +100,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __gl:#if lime WebGLRenderContext #else Dynamic #end;
 	@:noCompletion private var __height:Int;
 	@:noCompletion private var __maskShader:Context3DMaskShader;
-	@:noCompletion private var __alphaMaskShader:Context3DAlphaMaskShader;
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __matrix:#if lime Matrix4 #else Dynamic #end;
 	@:noCompletion private var __maskObjects:Array<DisplayObject>;
 	@:noCompletion private var __numClipRects:Int;
@@ -184,16 +176,14 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		__stencilReference = 0;
 		__tempRect = new Rectangle();
 
-		if (__staticDefaultDisplayShader == null) __staticDefaultDisplayShader = new DisplayObjectShader();
-		if (__staticDefaultGraphicsShader == null) __staticDefaultGraphicsShader = new GraphicsShader();
+		if (__staticDefaultDisplayShader == null) __staticDefaultDisplayShader = new DisplayObjectShader.DefaultDisplayObjectShader();
+		if (__staticDefaultGraphicsShader == null) __staticDefaultGraphicsShader = new GraphicsShader.DefaultGraphicsShader();
 		if (__staticMaskShader == null) __staticMaskShader = new Context3DMaskShader();
-		if (__staticAlphaMaskShader == null) __staticAlphaMaskShader = new Context3DAlphaMaskShader();
 
 		__defaultDisplayShader = __staticDefaultDisplayShader;
 		__defaultGraphicsShader = __staticDefaultGraphicsShader;
 		__defaultShader = __defaultDisplayShader;
 		__maskShader = __staticMaskShader;
-		__alphaMaskShader = __staticAlphaMaskShader;
 
 		__initShader(__defaultShader);
 
@@ -208,9 +198,9 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		3: Radial Gradient
 		4: Shader
 	**/
-	public function applyGraphicsFillType(type:Int):Void
+	public function applyGraphicsFillType(value:Int):Void
 	{
-		__fillTypeValue[0] = type;
+		__fillTypeValue[0] = value;
 		if (__currentShaderBuffer != null)
 		{
 			__currentShaderBuffer.addIntOverride("openfl_FillType", __fillTypeValue);
@@ -218,6 +208,32 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		else if (__currentShader != null)
 		{
 			if (__currentShader.__fillType != null) __currentShader.__fillType.value = __fillTypeValue;
+		}
+	}
+
+	public function applyLinear(value:Int):Void
+	{
+		__linearValue[0] = value;
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addIntOverride("openfl_Linear", __linearValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__linear != null) __currentShader.__linear.value = __linearValue;
+		}
+	}
+
+	public function applyFocalPointRatio(value:Float):Void
+	{
+		__focalPointRatioValue[0] = value;
+		if (__currentShaderBuffer != null)
+		{
+			__currentShaderBuffer.addFloatOverride("openfl_FocalPointRatio", __focalPointRatioValue);
+		}
+		else if (__currentShader != null)
+		{
+			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = __focalPointRatioValue;
 		}
 	}
 
@@ -360,51 +376,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		}
 	}
 
-	public function applyDistanceField(type:DistanceFieldType, distanceRange:Float, weight:Float, fillColor:ARGB, outlineColor:ARGB, outlineWidth:Float):Void
-	{
-		__distanceFieldTypeValue[0] = switch type
-		{
-			case DistanceFieldType.MSDF: 1;
-			case DistanceFieldType.SDF: 2;
-			case DistanceFieldType.PSDF: 3;
-			default: 0;
-		};
-		__distanceRangeValue[0] = distanceRange;
-
-		__fillColorValue[0] = fillColor.r / 255;
-		__fillColorValue[1] = fillColor.g / 255;
-		__fillColorValue[2] = fillColor.b / 255;
-		__fillColorValue[3] = fillColor.a / 255;
-
-		__outlineColorValue[0] = outlineColor.r / 255;
-		__outlineColorValue[1] = outlineColor.g / 255;
-		__outlineColorValue[2] = outlineColor.b / 255;
-		__outlineColorValue[3] = outlineColor.a / 255;
-
-		__outlineWidthValue[0] = outlineWidth;
-
-		__weightValue[0] = weight;
-
-		if (__currentShaderBuffer != null)
-		{
-			__currentShaderBuffer.addIntOverride("openfl_DistanceFieldType", __distanceFieldTypeValue);
-			__currentShaderBuffer.addFloatOverride("openfl_DistanceRange", __distanceRangeValue);
-			__currentShaderBuffer.addFloatOverride("openfl_Weight", __weightValue);
-			__currentShaderBuffer.addFloatOverride("openfl_FillColor", __fillColorValue);
-			__currentShaderBuffer.addFloatOverride("openfl_OutlineColor", __outlineColorValue);
-			__currentShaderBuffer.addFloatOverride("openfl_OutlineWidth", __outlineWidthValue);
-		}
-		else if (__currentShader != null)
-		{
-			if (__currentShader.__distanceFieldType != null) __currentShader.__distanceFieldType.value = __distanceFieldTypeValue;
-			if (__currentShader.__distanceRange != null) __currentShader.__distanceRange.value = __distanceRangeValue;
-			if (__currentShader.__weight != null) __currentShader.__weight.value = __weightValue;
-			if (__currentShader.__fillColor != null) __currentShader.__fillColor.value = __fillColorValue;
-			if (__currentShader.__outlineWidth != null) __currentShader.__outlineWidth.value = __outlineWidthValue;
-			if (__currentShader.__outlineColor != null) __currentShader.__outlineColor.value = __outlineColorValue;
-		}
-	}
-
 	/**
 		Applies render matrix to the active shader, if compatible with OpenFL core shaders
 	**/
@@ -425,20 +396,12 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	**/
 	public function applyGradient(gradient:Gradient):Void
 	{
-		__focalPointRatioValue[0] = gradient.focalPointRatio;
 		var bmd = gradient.getBitmap();
 
 		applyGraphicsFillType(gradient.type == LINEAR ? 2 : 3);
 		applyBitmapData(bmd, true);
-
-		if (__currentShaderBuffer != null)
-		{
-			__currentShaderBuffer.addFloatOverride("openfl_FocalPointRatio", __focalPointRatioValue);
-		}
-		else if (__currentShader != null)
-		{
-			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = __focalPointRatioValue;
-		}
+		applyLinear(gradient.interpolationMethod == LINEAR_RGB ? 1 : 0);
+		applyFocalPointRatio(gradient.focalPointRatio);
 	}
 
 	/**
@@ -608,16 +571,12 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			if (__currentShader.__textureSize != null) __currentShader.__textureSize.value = null;
 			if (__currentShader.__hasColorTransform != null) __currentShader.__hasColorTransform.value = null;
 			if (__currentShader.__hasVertexColors != null) __currentShader.__hasVertexColors.value = null;
-			if (__currentShader.__distanceFieldType != null) __currentShader.__distanceFieldType.value = null;
-			if (__currentShader.__distanceRange != null) __currentShader.__distanceRange.value = null;
-			if (__currentShader.__fillColor != null) __currentShader.__fillColor.value = null;
-			if (__currentShader.__outlineColor != null) __currentShader.__outlineColor.value = null;
-			if (__currentShader.__outlineWidth != null) __currentShader.__outlineWidth.value = null;
 			if (__currentShader.__position != null) __currentShader.__position.value = null;
 			if (__currentShader.__matrix != null) __currentShader.__matrix.value = null;
 			if (__currentShader.__vertexColor != null) __currentShader.__vertexColor.value = null;
 			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = null;
 			if (__currentShader.__fillType != null) __currentShader.__fillType.value = null;
+			if (__currentShader.__linear != null) __currentShader.__linear.value = null;
 			__currentShader.__clearUseArray();
 		}
 	}

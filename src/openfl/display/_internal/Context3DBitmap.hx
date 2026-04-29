@@ -13,6 +13,7 @@ import openfl.display._internal.stats.DrawCallContext;
 @:noDebug
 #end
 @:access(openfl.display3D.Context3D)
+@:access(openfl.display.DisplayObject)
 @:access(openfl.display.Bitmap)
 @:access(openfl.display.BitmapData)
 @:access(openfl.display.Shader)
@@ -93,7 +94,7 @@ class Context3DBitmap
 
 			var shader = renderer.__maskShader;
 			renderer.setShader(shader);
-			renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
+			// renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
 			renderer.applyMatrix(renderer.__getMatrix(bitmap.__renderTransform, bitmap.pixelSnapping));
 			renderer.updateShader();
 

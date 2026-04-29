@@ -108,7 +108,6 @@ class Gradient
 			var rr = Std.int(((c0 >> 16 & 0xFF) * (1 - f)) + ((c1 >> 16 & 0xFF) * f));
 			var gg = Std.int(((c0 >> 8 & 0xFF) * (1 - f)) + ((c1 >> 8 & 0xFF) * f));
 			var bb = Std.int(((c0 & 0xFF) * (1 - f)) + ((c1 & 0xFF) * f));
-
 			pixels.writeUnsignedInt((aa << 24) | (rr << 16) | (gg << 8) | bb);
 		}
 

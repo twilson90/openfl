@@ -173,7 +173,12 @@ class SimpleButton extends InteractiveObject
 		__upState = (upState != null) ? upState : new DisplayObject();
 		__overState = overState;
 		__downState = downState;
-		this.hitTestState = (hitTestState != null) ? hitTestState : new DisplayObject();
+
+		// SWF import and other methods of creating SimpleButton, hitTestState is often null, in which case we *should* use currentState instead.
+		// Differs from AS3 behaviour which makes buttons unclickable if hitTestState is null.
+
+		this.hitTestState = hitTestState;
+		// this.hitTestState = (hitTestState != null) ? hitTestState : new DisplayObject();
 
 		addEventListener(MouseEvent.MOUSE_DOWN, __this_onMouseDown);
 		addEventListener(MouseEvent.MOUSE_OUT, __this_onMouseOut);
@@ -355,7 +360,7 @@ class SimpleButton extends InteractiveObject
 	// Getters & Setters
 	@:noCompletion private function get_downState():DisplayObject
 	{
-		return __downState;
+		return __downState != null ? __downState : __upState;
 	}
 
 	@:noCompletion private function set_downState(downState:DisplayObject):DisplayObject
@@ -370,7 +375,7 @@ class SimpleButton extends InteractiveObject
 
 	@:noCompletion private function get_hitTestState():DisplayObject
 	{
-		return __hitTestState;
+		return __hitTestState != null ? __hitTestState : __currentState;
 	}
 
 	@:noCompletion private function set_hitTestState(hitTestState:DisplayObject):DisplayObject
@@ -394,7 +399,7 @@ class SimpleButton extends InteractiveObject
 
 	@:noCompletion private function get_overState():DisplayObject
 	{
-		return __overState;
+		return __overState != null ? __overState : __upState;
 	}
 
 	@:noCompletion private function set_overState(overState:DisplayObject):DisplayObject
@@ -484,6 +489,7 @@ class SimpleButton extends InteractiveObject
 			}
 
 			__setRenderDirty();
+			__cleanUpCacheBitmap();
 		}
 
 		__currentState = value;

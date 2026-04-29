@@ -130,6 +130,10 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 
 		__group = new TileContainer();
 		__group.tileset = tileset;
+
+		width = Std.int(Math.max(1, width));
+		height = Std.int(Math.max(1, height));
+
 		#if !flash
 		__width = width;
 		__height = height;
@@ -457,7 +461,7 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 		if (value != bitmapData.height)
 		{
 			var cacheSmoothing = smoothing;
-			bitmapData = new BitmapData(bitmapData.width, Std.int(value), true, 0);
+			bitmapData = new BitmapData(bitmapData.width, Std.int(Math.max(1, value)), true, 0);
 			smoothing = cacheSmoothing;
 		}
 		#if (haxe_ver >= 4.3)
@@ -511,7 +515,7 @@ class Tilemap extends #if !flash DisplayObject #else Bitmap implements IDisplayO
 		if (value != bitmapData.width)
 		{
 			var cacheSmoothing = smoothing;
-			bitmapData = new BitmapData(Std.int(value), bitmapData.height, true, 0);
+			bitmapData = new BitmapData(Std.int(Math.max(1, value)), bitmapData.height, true, 0);
 			smoothing = cacheSmoothing;
 		}
 		#if (haxe_ver >= 4.3)

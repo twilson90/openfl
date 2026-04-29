@@ -59,12 +59,30 @@ class GraphicsShader extends Shader
 
 		uniform bool openfl_HasColorTransform;
         uniform int openfl_FillType;
+        uniform int openfl_Linear;
         uniform float openfl_FocalPointRatio;
 		uniform bool openfl_HasVertexColors;
 		uniform sampler2D bitmap;
 
-		vec4 premultiply(vec4 c) {
+		vec4 multiplyAlpha(vec4 c) {
 			return vec4(c.rgb * c.a, c.a);
+		}
+		vec4 unmultiplyAlpha(vec4 c) {
+			return vec4(c.rgb / c.a, c.a);
+		}
+
+		vec4 linearToSRGB(vec4 c)
+		{
+			vec3 rgb = c.rgb;
+			rgb = mix(1.055 * pow(rgb, vec3(1.0 / 2.4)) - 0.055, rgb * 12.92, vec3(lessThanEqual(rgb, vec3(0.0031308))));
+			return vec4(rgb, c.a);
+		}
+
+		vec4 sRGBToLinear(vec4 c)
+		{
+			vec3 rgb = c.rgb;
+			rgb = mix(pow((rgb + 0.055) * (1.0 / 1.055), vec3(2.4)), rgb * (1.0/12.92), vec3(lessThanEqual(rgb, vec3(0.04045))));
+			return vec4(rgb, c.a);
 		}
 
 		vec4 openfl_baseColor()
@@ -73,7 +91,7 @@ class GraphicsShader extends Shader
 			if (openfl_FillType == 0)
 			{
 				// Solid Color
-				color = premultiply(openfl_VertexColorv.bgra);
+				color = multiplyAlpha(openfl_VertexColorv.bgra);
 			}
 			else if (openfl_FillType == 1)
 			{
@@ -100,19 +118,21 @@ class GraphicsShader extends Shader
 					t = 0.0;
 				} else {
 					vec2 rayDir = dir / distFocal;
-					vec2 fc = focal;
-					float B = 2.0 * dot(rayDir, fc);
-					float C = dot(fc, fc) - 1.0;
+					float B = 2.0 * dot(rayDir, focal);
+					float C = dot(focal, focal) - 1.0;
 					float edgeDist = (-B + sqrt(B*B - 4.0*C)) * 0.5;
 					t = distFocal / edgeDist;
 				}
 				color = texture2D(bitmap, vec2(t, 0.0));
-
 			}
 			else if (openfl_FillType == 4)
 			{
 				// Custom Fill
 				color = vec4( 0.0, 0.0, 0.0, 1.0 );
+			}
+
+			if (openfl_Linear == 1) {
+				color = linearToSRGB(color);
 			}
 
 			return color;
@@ -152,9 +172,6 @@ class GraphicsShader extends Shader
 			return color * openfl_Alphav;
 		}
 	")
-	@:glFragmentBody("
-		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
-	")
 	#if emscripten
 	@:glFragmentSource("
 		#pragma header
@@ -178,6 +195,17 @@ class GraphicsShader extends Shader
 		}
 	")
 	#end
+	public function new(code:ByteArray = null)
+	{
+		super(code);
+	}
+}
+
+class DefaultGraphicsShader extends GraphicsShader
+{
+	@:glFragmentBody("
+		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
+	")
 	public function new(code:ByteArray = null)
 	{
 		super(code);

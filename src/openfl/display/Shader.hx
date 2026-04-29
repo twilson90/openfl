@@ -211,6 +211,7 @@ class Shader
 	**/
 	public var program:Program3D;
 
+	@:noCompletion private var __dirtyGL:Bool;
 	@:noCompletion private var __alpha:ShaderParameter<Float>;
 	@:noCompletion private var __bitmap:ShaderInput<BitmapData>;
 	@:noCompletion private var __colorMultiplier:ShaderParameter<Float>;
@@ -222,13 +223,6 @@ class Shader
 	@:noCompletion private var __glVertexSource:String;
 	@:noCompletion private var __hasColorTransform:ShaderParameter<Bool>;
 	@:noCompletion private var __hasVertexColors:ShaderParameter<Bool>;
-	@:noCompletion private var __distanceFieldType:ShaderParameter<Int>;
-	@:noCompletion private var __distanceRange:ShaderParameter<Float>;
-	@:noCompletion private var __weight:ShaderParameter<Float>;
-	@:noCompletion private var __fillColor:ShaderParameter<Float>;
-	@:noCompletion private var __outlineColor:ShaderParameter<Float>;
-	@:noCompletion private var __outlineWidth:ShaderParameter<Float>;
-
 	@:noCompletion private var __inputBitmapData:Array<ShaderInput<BitmapData>>;
 	@:noCompletion private var __isGenerated:Bool;
 	@:noCompletion private var __matrix:ShaderParameter<Float>;
@@ -244,6 +238,7 @@ class Shader
 	@:noCompletion private var __vertexColor:ShaderParameter<Float>;
 	@:noCompletion private var __focalPointRatio:ShaderParameter<Float>;
 	@:noCompletion private var __fillType:ShaderParameter<Int>;
+	@:noCompletion private var __linear:ShaderParameter<Int>;
 
 	#if openfljs
 	@:noCompletion private static function __init__()
@@ -496,37 +491,7 @@ class Shader
 		{
 			var gl = __context.gl;
 
-			var prefix = "";
-			#if (js && html5)
-			prefix += "#version 300 es\n\n";
-			prefix += (precisionHint == FULL ? "precision mediump float;" : "precision lowp float;") + "\n\n";
-			glFragmentSource = "out vec4 fragColor;\n" + glFragmentSource;
-			#else
-			prefix += "#ifdef GL_ES\n"
-				+ (precisionHint == FULL ? "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
-					+ "precision highp float;\n"
-					+ "#else\n"
-					+ "precision mediump float;\n"
-					+ "#endif\n" : "precision lowp float;\n")
-				+ "#endif\n\n";
-			#end
-
-			var vertex = prefix + glVertexSource;
-
-			var fragment = prefix + glFragmentSource;
-
-			#if (js && html5)
-			vertex = StringTools.replace(vertex, "attribute", "in");
-			vertex = StringTools.replace(vertex, "varying", "out");
-			vertex = StringTools.replace(vertex, "texture2D", "texture");
-			vertex = StringTools.replace(vertex, "textureCube", "texture");
-			fragment = StringTools.replace(fragment, "varying", "in");
-			fragment = StringTools.replace(fragment, "texture2D", "texture");
-			fragment = StringTools.replace(fragment, "textureCube", "texture");
-			fragment = StringTools.replace(fragment, "gl_FragColor", "fragColor");
-			#end
-
-			var id = vertex + fragment;
+			var id = glVertexSource + glFragmentSource;
 
 			if (__context.__programs.exists(id))
 			{
@@ -538,6 +503,39 @@ class Shader
 
 				// TODO
 				// program.uploadSources (vertex, fragment);
+
+				var vertex = glVertexSource;
+				var fragment = glFragmentSource;
+
+				#if (js && html5)
+				vertex = StringTools.replace(vertex, "attribute", "in");
+				vertex = StringTools.replace(vertex, "varying", "out");
+				vertex = StringTools.replace(vertex, "texture2D", "texture");
+				vertex = StringTools.replace(vertex, "textureCube", "texture");
+				fragment = StringTools.replace(fragment, "varying", "in");
+				fragment = StringTools.replace(fragment, "texture2D", "texture");
+				fragment = StringTools.replace(fragment, "textureCube", "texture");
+				fragment = StringTools.replace(fragment, "gl_FragColor", "fragColor");
+				#end
+
+				var prefix = "";
+				#if (js && html5)
+				prefix += "#version 300 es\n\n";
+				prefix += (precisionHint == FULL ? "precision mediump float;" : "precision lowp float;") + "\n\n";
+				prefix += "out vec4 fragColor;\n";
+				#else
+				prefix += "#ifdef GL_ES\n"
+					+ (precisionHint == FULL ? "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+						+ "precision highp float;\n"
+						+ "#else\n"
+						+ "precision mediump float;\n"
+						+ "#endif\n" : "precision lowp float;\n")
+					+ "#endif\n\n";
+				#end
+
+				vertex = prefix + vertex;
+				fragment = prefix + fragment;
+
 				program.__glProgram = __createGLProgram(vertex, fragment);
 
 				__context.__programs.set(id, program);
@@ -691,7 +689,7 @@ class Shader
 				switch (parameterType)
 				{
 					case BOOL, BOOL2, BOOL3, BOOL4:
-						var parameter = new ShaderParameter<Bool>();
+						var parameter = new ShaderParameter<Bool>(this);
 						parameter.name = name;
 						parameter.type = parameterType;
 						parameter.__arrayLength = arrayLength;
@@ -713,7 +711,7 @@ class Shader
 						if (__isGenerated) Reflect.setField(this, name, parameter);
 
 					case INT, INT2, INT3, INT4:
-						var parameter = new ShaderParameter<Int>();
+						var parameter = new ShaderParameter<Int>(this);
 						parameter.name = name;
 						parameter.type = parameterType;
 						parameter.__arrayLength = arrayLength;
@@ -726,8 +724,8 @@ class Shader
 						{
 							case "openfl_FillType":
 								__fillType = parameter;
-							case "openfl_DistanceFieldType":
-								__distanceFieldType = parameter;
+							case "openfl_Linear":
+								__linear = parameter;
 							default:
 						}
 
@@ -735,7 +733,7 @@ class Shader
 						if (__isGenerated) Reflect.setField(this, name, parameter);
 
 					default:
-						var parameter = new ShaderParameter<Float>();
+						var parameter = new ShaderParameter<Float>(this);
 						parameter.name = name;
 						parameter.type = parameterType;
 						parameter.__arrayLength = arrayLength;
@@ -769,16 +767,6 @@ class Shader
 									__vertexColor = parameter;
 								case "openfl_FocalPointRatio":
 									__focalPointRatio = parameter;
-								case "openfl_DistanceRange":
-									__distanceRange = parameter;
-								case "openfl_Weight":
-									__weight = parameter;
-								case "openfl_FillColor":
-									__fillColor = parameter;
-								case "openfl_OutlineColor":
-									__outlineColor = parameter;
-								case "openfl_OutlineWidth":
-									__outlineWidth = parameter;
 								default:
 							}
 						}

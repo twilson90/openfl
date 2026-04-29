@@ -70,12 +70,8 @@ class Context3DGraphics
 	private static var fillTess:Tesselator = new Tesselator();
 	private static var lineTess:PolyLineTesselator = new PolyLineTesselator();
 
-	private static var graphics:Graphics;
-	private static var ctx:DrawContext;
-	private static var buffer:Context3DBatchBuffer;
-
-	private static function buildDrawTrianglesBuffer(vertices:Vector<Float>, indices:Vector<Int> = null, uvtData:Vector<Float> = null, fill:Fill,
-			triCulling:TriangleCulling = NONE, isStroke:Bool = false)
+	private static function buildDrawTrianglesBuffer(graphics:Graphics, vertices:Vector<Float>, indices:Vector<Int> = null, uvtData:Vector<Float> = null,
+			fill:Fill, triCulling:TriangleCulling = NONE, isStroke:Bool = false)
 	{
 		var numVertices = Std.int(vertices.length / 2);
 		if (numVertices < 3) return;
@@ -102,7 +98,7 @@ class Context3DGraphics
 		#if !openfl_gl_scale9grid
 		if (graphics.__useScale9Grid)
 		{
-			vertices = applyScale9Grid(vertices);
+			vertices = applyScale9Grid(graphics, vertices);
 		}
 		#end
 
@@ -115,10 +111,10 @@ class Context3DGraphics
 			}
 		}
 
-		buffer.append(vertices, indices, uvtData, triCulling, fill, isStroke);
+		graphics.__buffer.append(vertices, indices, uvtData, triCulling, fill, isStroke);
 	}
 
-	public static function applyScale9Grid(vertices:Vector<Float>):Vector<Float>
+	public static function applyScale9Grid(graphics:Graphics, vertices:Vector<Float>):Vector<Float>
 	{
 		tempScale9VerticesVector.length = vertices.length;
 		var minX = graphics.__boundsExStroke.x;
@@ -305,15 +301,15 @@ class Context3DGraphics
 		Matrix.__pool.release(tileTransform);
 	}
 
-	private static inline function drawRect(x:Float, y:Float, width:Float, height:Float)
+	private static inline function drawRect(ctx:DrawContext, x:Float, y:Float, width:Float, height:Float)
 	{
 		#if openfl_gl_scale9grid
-		if (graphics.__useScale9Grid)
+		if (ctx.graphics.__useScale9Grid)
 		{
-			var scaledLeft = graphics.__getScale9GridPositionX(x);
-			var scaledTop = graphics.__getScale9GridPositionY(y);
-			var scaledRight = graphics.__getScale9GridPositionX(x + width);
-			var scaledBottom = graphics.__getScale9GridPositionY(y + height);
+			var scaledLeft = ctx.graphics.__getScale9GridPositionX(x);
+			var scaledTop = ctx.graphics.__getScale9GridPositionY(y);
+			var scaledRight = ctx.graphics.__getScale9GridPositionX(x + width);
+			var scaledBottom = ctx.graphics.__getScale9GridPositionY(y + height);
 
 			x = scaledLeft;
 			y = scaledTop;
@@ -332,7 +328,7 @@ class Context3DGraphics
 		}
 	}
 
-	private static inline function drawRoundRect(x:Float, y:Float, width:Float, height:Float, ellipseWidth:Float, ellipseHeight:Float)
+	private static inline function drawRoundRect(ctx:DrawContext, x:Float, y:Float, width:Float, height:Float, ellipseWidth:Float, ellipseHeight:Float)
 	{
 		var left = x;
 		var top = y;
@@ -342,14 +338,14 @@ class Context3DGraphics
 		#if openfl_gl_scale9grid
 		if (graphics.__useScale9Grid)
 		{
-			var scaledLeft = graphics.__getScale9GridPositionX(left);
-			var scaledTop = graphics.__getScale9GridPositionY(top);
-			var scaledRight = graphics.__getScale9GridPositionX(right);
-			var scaledBottom = graphics.__getScale9GridPositionY(bottom);
-			var scaledEllipseLeft = graphics.__getScale9GridPositionX(left + ellipseWidth * 0.5) - scaledLeft;
-			var scaledEllipseRight = scaledRight - graphics.__getScale9GridPositionX(right - ellipseWidth * 0.5);
-			var scaledEllipseTop = graphics.__getScale9GridPositionY(top + ellipseHeight * 0.5) - scaledTop;
-			var scaledEllipseBottom = scaledBottom - graphics.__getScale9GridPositionY(bottom - ellipseHeight * 0.5);
+			var scaledLeft = ctx.graphics.__getScale9GridPositionX(left);
+			var scaledTop = ctx.graphics.__getScale9GridPositionY(top);
+			var scaledRight = ctx.graphics.__getScale9GridPositionX(right);
+			var scaledBottom = ctx.graphics.__getScale9GridPositionY(bottom);
+			var scaledEllipseLeft = ctx.graphics.__getScale9GridPositionX(left + ellipseWidth * 0.5) - scaledLeft;
+			var scaledEllipseRight = scaledRight - ctx.graphics.__getScale9GridPositionX(right - ellipseWidth * 0.5);
+			var scaledEllipseTop = ctx.graphics.__getScale9GridPositionY(top + ellipseHeight * 0.5) - scaledTop;
+			var scaledEllipseBottom = scaledBottom - ctx.graphics.__getScale9GridPositionY(bottom - ellipseHeight * 0.5);
 			var scaledEllipseWidth = Math.min(Math.min(scaledEllipseLeft, scaledEllipseRight), scaledRight - scaledLeft);
 			var scaledEllipseHeight = Math.min(Math.min(scaledEllipseTop, scaledEllipseBottom), scaledBottom - scaledTop);
 
@@ -387,20 +383,20 @@ class Context3DGraphics
 		}
 	}
 
-	private static inline function drawCircle(x:Float, y:Float, r:Float)
+	private static inline function drawCircle(ctx:DrawContext, x:Float, y:Float, r:Float)
 	{
-		drawEllipse(x - r, y - r, r * 2, r * 2);
+		drawEllipse(ctx, x - r, y - r, r * 2, r * 2);
 	}
 
-	private static inline function drawEllipse(x:Float, y:Float, width:Float, height:Float)
+	private static inline function drawEllipse(ctx:DrawContext, x:Float, y:Float, width:Float, height:Float)
 	{
 		#if openfl_gl_scale9grid
-		if (graphics.__useScale9Grid)
+		if (ctx.graphics.__useScale9Grid)
 		{
-			var scaledLeft = graphics.__getScale9GridPositionX(x);
-			var scaledTop = graphics.__getScale9GridPositionY(y);
-			var scaledRight = graphics.__getScale9GridPositionX(x + width);
-			var scaledBottom = graphics.__getScale9GridPositionY(y + height);
+			var scaledLeft = ctx.graphics.__getScale9GridPositionX(x);
+			var scaledTop = ctx.graphics.__getScale9GridPositionY(y);
+			var scaledRight = ctx.graphics.__getScale9GridPositionX(x + width);
+			var scaledBottom = ctx.graphics.__getScale9GridPositionY(y + height);
 
 			x = scaledLeft;
 			y = scaledTop;
@@ -426,12 +422,13 @@ class Context3DGraphics
 		}
 	}
 
-	private static inline function buildBuffer():Void
+	private static function buildBuffer(graphics:Graphics):Void
 	{
 		var data = DrawCommandReader.__pool.get();
 		data.reset(graphics.__commands);
 
-		ctx = DrawContext.__pool.get();
+		var ctx = DrawContext.__pool.get();
+		ctx.graphics = graphics;
 
 		if (graphics.__buffer == null)
 		{
@@ -440,11 +437,9 @@ class Context3DGraphics
 
 		graphics.__buffer.reset(DATA_PER_VERTEX);
 
-		Context3DGraphics.buffer = graphics.__buffer;
-
-		var matrix = graphics.__owner.__worldTransform;
-		var scaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
-		var scaleY = Math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d);
+		// var matrix = graphics.__owner.__worldTransform;
+		// var scaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
+		// var scaleY = Math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d);
 
 		for (type in graphics.__commands.types)
 		{
@@ -655,7 +650,7 @@ class Context3DGraphics
 						vertices = applyScale9Grid(vertices);
 					}
 					#end
-					buildDrawTrianglesBuffer(vertices, indices, uvtData, ctx.fill.fill);
+					buildDrawTrianglesBuffer(graphics, vertices, indices, uvtData, ctx.fill.fill);
 
 				case DRAW_TRIANGLES:
 					buildDrawContext(ctx);
@@ -671,7 +666,7 @@ class Context3DGraphics
 						vertices = applyScale9Grid(vertices);
 					}
 					#end
-					buildDrawTrianglesBuffer(vertices, indices, uvtData, ctx.fill.fill, culling);
+					buildDrawTrianglesBuffer(graphics, vertices, indices, uvtData, ctx.fill.fill, culling);
 
 				case DRAW_CIRCLE:
 					var c = data.readDrawCircle();
@@ -680,7 +675,7 @@ class Context3DGraphics
 					var y = c.y;
 					var r = c.radius;
 
-					drawCircle(x, y, r);
+					drawCircle(ctx, x, y, r);
 
 				case DRAW_ELLIPSE:
 					var c = data.readDrawEllipse();
@@ -689,7 +684,7 @@ class Context3DGraphics
 					var width = c.width;
 					var height = c.height;
 
-					drawEllipse(x, y, width, height);
+					drawEllipse(ctx, x, y, width, height);
 
 				case DRAW_ROUND_RECT:
 					var c = data.readDrawRoundRect();
@@ -703,7 +698,7 @@ class Context3DGraphics
 					if (ellipseHeight == null) ellipseHeight = ellipseWidth;
 					if (ellipseWidth > width) ellipseWidth = width;
 					if (ellipseHeight > height) ellipseHeight = height;
-					drawRoundRect(x, y, width, height, ellipseWidth, ellipseHeight);
+					drawRoundRect(ctx, x, y, width, height, ellipseWidth, ellipseHeight);
 
 				case DRAW_RECT:
 					var c = data.readDrawRect();
@@ -712,7 +707,7 @@ class Context3DGraphics
 					var width = c.width;
 					var height = c.height;
 
-					drawRect(x, y, width, height);
+					drawRect(ctx, x, y, width, height);
 
 				case WINDING_EVEN_ODD:
 					data.readWindingEvenOdd();
@@ -731,7 +726,6 @@ class Context3DGraphics
 
 		buildDrawContext(ctx);
 		DrawContext.__pool.release(ctx);
-		ctx = null;
 	}
 
 	private static function buildDrawContext(ctx:DrawContext):Void
@@ -754,7 +748,7 @@ class Context3DGraphics
 
 			var vertices = fillTess.vertices;
 			var indices = fillTess.elements;
-			buildDrawTrianglesBuffer(vertices, indices, null, fill.fill);
+			buildDrawTrianglesBuffer(ctx.graphics, vertices, indices, null, fill.fill);
 			fillTess.reset();
 		}
 
@@ -770,7 +764,7 @@ class Context3DGraphics
 				lineTess.tesselate(closed, stroke.thickness, stroke.joints, stroke.caps, stroke.miterLimit, stroke.scaleMode);
 				var vertices = lineTess.vertices;
 				var indices = lineTess.indices;
-				buildDrawTrianglesBuffer(vertices, indices, null, stroke.fill, NONE, true);
+				buildDrawTrianglesBuffer(ctx.graphics, vertices, indices, null, stroke.fill, NONE, true);
 				lineTess.reset();
 			}
 		}
@@ -825,29 +819,27 @@ class Context3DGraphics
 
 			if (!bounds.isEmpty() && width >= 1 && height >= 1)
 			{
-				Context3DGraphics.graphics = graphics;
-				Context3DGraphics.buffer = graphics.__buffer;
 				var context = renderer.__context3D;
 
 				if (graphics.__hardwareDirty)
 				{
-					buildBuffer();
-					if (buffer.wireframeIndexBuffer != null)
+					buildBuffer(graphics);
+					if (graphics.__buffer.wireframeIndexBuffer != null)
 					{
-						buffer.wireframeIndexBuffer.dispose();
-						buffer.wireframeIndexBuffer = null;
+						graphics.__buffer.wireframeIndexBuffer.dispose();
+						graphics.__buffer.wireframeIndexBuffer = null;
 					}
 					graphics.__hardwareDirty = false;
 				}
 
-				buffer.flush(context);
+				graphics.__buffer.flush(context);
 
-				if (graphics.__wireframe && buffer.wireframeIndexBuffer == null)
+				if (graphics.__wireframe && graphics.__buffer.wireframeIndexBuffer == null)
 				{
-					buffer.prepareWireFrameBuffer();
+					graphics.__buffer.prepareWireFrameBuffer();
 				}
 
-				var numBatches = buffer.length;
+				var numBatches = graphics.__buffer.length;
 
 				if (numBatches > 0)
 				{
@@ -860,13 +852,16 @@ class Context3DGraphics
 					renderTransform.translate(graphics.__renderTransform.tx, graphics.__renderTransform.ty);
 					var uMatrix = renderer.__getMatrix(renderTransform, NEVER);
 
+					var worldAlpha = renderer.__getAlpha(graphics.__owner.__worldAlpha);
+					var worldColorTransform = renderer.__getColorTransform(graphics.__owner.__worldColorTransform);
+
 					for (i in 0...numBatches)
 					{
-						var numIndices = buffer.numIndices[i];
-						var numVertices = buffer.numVertices[i];
-						var triCulling = buffer.culling[i];
-						var fill = buffer.fill[i];
-						var isTransparentStroke = buffer.isTransparentStroke[i];
+						var numIndices = graphics.__buffer.numIndices[i];
+						var numVertices = graphics.__buffer.numVertices[i];
+						var triCulling = graphics.__buffer.culling[i];
+						var fill = graphics.__buffer.fill[i];
+						var isTransparentStroke = graphics.__buffer.isTransparentStroke[i];
 
 						var bitmap = fill.bitmap;
 						var bitmapSmooth = fill.bitmapSmooth;
@@ -881,7 +876,7 @@ class Context3DGraphics
 							renderer.applyMatrix(uMatrix);
 							renderer.updateShader();
 
-							drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+							drawElements(context, graphics, renderer.__maskShader, indexOffset, numIndices, triCulling);
 						}
 						else
 						{
@@ -903,7 +898,7 @@ class Context3DGraphics
 								renderer.applyMatrix(uMatrix);
 								renderer.updateShader();
 
-								drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+								drawElements(context, graphics, renderer.__maskShader, indexOffset, numIndices, triCulling);
 
 								context.setColorMask(true, true, true, true);
 								context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0);
@@ -921,15 +916,12 @@ class Context3DGraphics
 								{
 									renderer.applyBitmapData(bitmap, bitmapSmooth, bitmapRepeat);
 								}
-								renderer.applyAlpha(graphics.__owner.__worldAlpha);
-								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.applyAlpha(worldAlpha);
+								renderer.applyColorTransform(worldColorTransform);
 								renderer.__updateShaderBuffer(indexOffset);
-								// needed if any uniform parameters have changed.
-								// TODO: check if shaderBuffer is dirty and only update it if so.
-								if (graphics.__owner.__renderDirty)
-								{
-									shaderBuffer.update(cast shader);
-								}
+								// update shader buffer needed when parameters have changed.
+								// if (shader.__dirtyGL)
+								shaderBuffer.update(cast shader);
 							}
 							else if (bitmap != null)
 							{
@@ -937,8 +929,8 @@ class Context3DGraphics
 								renderer.applyGraphicsFillType(1);
 								renderer.applyMatrix(uMatrix);
 								renderer.applyBitmapData(bitmap, bitmapSmooth, bitmapRepeat);
-								renderer.applyAlpha(graphics.__owner.__worldAlpha);
-								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.applyAlpha(worldAlpha);
+								renderer.applyColorTransform(worldColorTransform);
 								renderer.updateShader();
 							}
 							else if (gradient != null)
@@ -946,8 +938,8 @@ class Context3DGraphics
 								renderer.setShader(shader);
 								renderer.applyGradient(gradient);
 								renderer.applyMatrix(uMatrix);
-								renderer.applyAlpha(graphics.__owner.__worldAlpha);
-								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.applyAlpha(worldAlpha);
+								renderer.applyColorTransform(worldColorTransform);
 								renderer.updateShader();
 							}
 							else
@@ -956,15 +948,15 @@ class Context3DGraphics
 								renderer.applyGraphicsFillType(0);
 								renderer.applyHasVertexColors(true);
 								renderer.applyMatrix(uMatrix);
-								renderer.applyAlpha(graphics.__owner.__worldAlpha);
-								renderer.applyColorTransform(graphics.__owner.__worldColorTransform);
+								renderer.applyAlpha(worldAlpha);
+								renderer.applyColorTransform(worldColorTransform);
 								renderer.updateShader();
 							}
 
 							if (isTransparentStroke)
 							{
 								// draw a quad that encompasses the stroke so we can apply the stencil to it.
-								drawTransparentStroke(context, shader, buffer, strokeIndexOffset, 6, triCulling);
+								drawTransparentStroke(context, graphics, shader, strokeIndexOffset, 6, triCulling);
 
 								if (renderer.__stencilReference > 1)
 								{
@@ -972,7 +964,7 @@ class Context3DGraphics
 									context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0xFF);
 									context.setColorMask(false, false, false, false);
 
-									drawElements(context, renderer.__maskShader, buffer, indexOffset, numIndices, triCulling);
+									drawElements(context, graphics, renderer.__maskShader, indexOffset, numIndices, triCulling);
 									renderer.__stencilReference--;
 
 									context.setStencilActions(FRONT_AND_BACK, EQUAL, KEEP, KEEP, KEEP);
@@ -988,7 +980,7 @@ class Context3DGraphics
 							}
 							else
 							{
-								drawElements(context, shader, buffer, indexOffset, numIndices, triCulling);
+								drawElements(context, graphics, shader, indexOffset, numIndices, triCulling);
 							}
 						}
 
@@ -1010,9 +1002,11 @@ class Context3DGraphics
 		}
 	}
 
-	private static function drawTransparentStroke(context:Context3D, shader:Shader, buffer:Context3DBatchBuffer, indexOffset:Int, numIndices:Int,
+	private static function drawTransparentStroke(context:Context3D, graphics:Graphics, shader:Shader, indexOffset:Int, numIndices:Int,
 			triCulling:TriangleCulling):Void
 	{
+		var buffer = graphics.__buffer;
+
 		if (shader.__position != null) context.setVertexBufferAt(shader.__position.index, buffer.strokeVertexBuffer, 0, FLOAT_2);
 		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.strokeVertexBuffer, 2, FLOAT_3);
 		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.strokeVertexBuffer, 5, BYTES_4);
@@ -1045,9 +1039,10 @@ class Context3DGraphics
 		}
 	}
 
-	private static function drawElements(context:Context3D, shader:Shader, buffer:Context3DBatchBuffer, indexOffset:Int, numIndices:Int,
-			triCulling:TriangleCulling):Void
+	private static function drawElements(context:Context3D, graphics:Graphics, shader:Shader, indexOffset:Int, numIndices:Int, triCulling:TriangleCulling):Void
 	{
+		var buffer = graphics.__buffer;
+
 		if (shader.__position != null) context.setVertexBufferAt(shader.__position.index, buffer.vertexBuffer, 0, FLOAT_2);
 		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.vertexBuffer, 2, FLOAT_3);
 		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.vertexBuffer, 5, BYTES_4);
@@ -1107,23 +1102,13 @@ class Context3DGraphics
 			#end
 		}
 
-		Context3DGraphics.graphics = graphics;
-
-		var bounds = graphics.__bounds;
-		var width = graphics.__width;
-		var height = graphics.__height;
-
-		if (!bounds.isEmpty() && width >= 1 && height >= 1)
+		if (graphics.__hardwareDirty)
 		{
-			if (graphics.__hardwareDirty)
-			{
-				buildBuffer();
-				graphics.__hardwareDirty = false;
-			}
-
-			return graphics.__buffer.hitTest(px, py);
+			buildBuffer(graphics);
+			graphics.__hardwareDirty = false;
 		}
-		return false;
+
+		return graphics.__buffer.hitTest(px, py);
 	}
 }
 
@@ -1132,6 +1117,7 @@ class Context3DGraphics
 @:access(openfl.display._internal.Contour)
 class DrawContext
 {
+	public var graphics:Graphics;
 	public var position:Point = new Point();
 	public var hasFill(get, never):Bool;
 	public var hasStroke(get, never):Bool;
@@ -1175,6 +1161,7 @@ class DrawContext
 
 	public function identity()
 	{
+		graphics = null;
 		for (fill in fills)
 		{
 			FillContext.__pool.release(fill);
