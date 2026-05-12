@@ -2089,12 +2089,16 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 		if (__mask != null)
 		{
+			__mask.__isMask = false;
+			__mask.__maskTarget = null;
 			__mask.__setTransformDirty();
 			__mask.__setRenderDirty();
 		}
 
 		if (value != null)
 		{
+			value.__isMask = true;
+			value.__maskTarget = this;
 			value.__setWorldTransformInvalid();
 		}
 
@@ -2264,18 +2268,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 			value.__maskTarget.mask = null;
 		}
 
-		if (__mask != null)
-		{
-			__mask.__isMask = false;
-			__mask.__maskTarget = null;
-		}
-
-		if (value != null)
-		{
-			value.__isMask = true;
-			value.__maskTarget = this;
-		}
-
 		__setMask(value);
 
 		return __mask;
@@ -2303,7 +2295,10 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private function set_clippingLayer(value:DisplayObject):DisplayObject
 	{
 		__hasClippingLayer = value != null;
-		__setMask(value);
+		if (value != __mask)
+		{
+			__setMask(value);
+		}
 		return __mask;
 	}
 

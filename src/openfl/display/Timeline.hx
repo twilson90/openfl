@@ -62,6 +62,7 @@ class Timeline
 	@:noCompletion private var __scope:MovieClip;
 	@:noCompletion private var __timeElapsed:Int;
 	@:noCompletion private var __totalFrames:Int;
+	@:noCompletion private var __ignoreNextUpdate:Bool;
 
 	private function new()
 	{
@@ -188,6 +189,12 @@ class Timeline
 	{
 		if (__isPlaying)
 		{
+			if (__ignoreNextUpdate)
+			{
+				__ignoreNextUpdate = false;
+				return;
+			}
+
 			var nextFrame = __getNextFrame(deltaTime);
 
 			if (__lastFrameScriptEval == nextFrame)

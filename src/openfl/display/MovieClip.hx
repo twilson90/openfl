@@ -52,6 +52,8 @@ import openfl.events.MouseEvent;
 #end
 @:access(openfl.display.Timeline)
 @:access(openfl.geom.ColorTransform)
+@:access(openfl.display.Stage)
+@:access(openfl.display.Timeline)
 class MovieClip extends Sprite #if (openfl_dynamic && haxe_ver < "4.0.0") implements Dynamic<DisplayObject> #end
 {
 	/**
@@ -360,11 +362,18 @@ class MovieClip extends Sprite #if (openfl_dynamic && haxe_ver < "4.0.0") implem
 		{
 			__timeline.__enterFrame(deltaTime);
 		}
+		super.__enterFrame(deltaTime);
+	}
 
-		for (child in __children)
+	@:noCompletion private override function __setStageReference(stage:Stage):Void
+	{
+		// If MovieClip has just been added to stage a moment before the first enterFrame update.
+		// we don't want to skip first frame, so we ignore the first delta update.
+		if (this.stage != stage && stage != null && !stage.__isExitingFrame && __timeline != null)
 		{
-			child.__enterFrame(deltaTime);
+			__timeline.__ignoreNextUpdate = true;
 		}
+		super.__setStageReference(stage);
 	}
 
 	@:noCompletion private override function __stopAllMovieClips():Void

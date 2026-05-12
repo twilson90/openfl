@@ -1029,6 +1029,7 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 	@:noCompletion private var __uncaughtErrorEvents:UncaughtErrorEvents;
 	@:noCompletion private var __wasDirty:Bool;
 	@:noCompletion private var __wasFullscreen:Bool;
+	@:noCompletion private var __isExitingFrame:Bool;
 	#if lime
 	@:noCompletion private var __primaryTouch:Touch;
 	#end
@@ -2411,31 +2412,34 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 		#if openfl_pool_events
 		event = Event.__pool.get();
 		event.type = Event.ENTER_FRAME;
-
 		__broadcastEvent(event);
-
-		Event.__pool.release(event);
-		event = Event.__pool.get();
-		event.type = Event.FRAME_CONSTRUCTED;
-
-		__broadcastEvent(event);
-
-		Event.__pool.release(event);
-		event = Event.__pool.get();
-		event.type = Event.EXIT_FRAME;
-
-		__broadcastEvent(event);
-
 		Event.__pool.release(event);
 		#else
 		__broadcastEvent(new Event(Event.ENTER_FRAME));
-		__broadcastEvent(new Event(Event.FRAME_CONSTRUCTED));
-		__broadcastEvent(new Event(Event.EXIT_FRAME));
 		#end
 
 		__renderable = true;
 		__enterFrame(__deltaTime);
 		__deltaTime = 0;
+
+		__isExitingFrame = true;
+
+		#if openfl_pool_events
+		event = Event.__pool.get();
+		event.type = Event.FRAME_CONSTRUCTED;
+		__broadcastEvent(event);
+		Event.__pool.release(event);
+
+		event = Event.__pool.get();
+		event.type = Event.EXIT_FRAME;
+		__broadcastEvent(event);
+		Event.__pool.release(event);
+		#else
+		__broadcastEvent(new Event(Event.FRAME_CONSTRUCTED));
+		__broadcastEvent(new Event(Event.EXIT_FRAME));
+		#end
+
+		__isExitingFrame = false;
 
 		var cancelled = __render(context);
 		if (cancelled)

@@ -7,7 +7,7 @@ import openfl.display._internal.Context3DBuffer;
 import openfl.display._internal.DrawCommandBuffer;
 import openfl.display._internal.DrawCommandReader;
 import openfl.display._internal.ShaderBuffer;
-import openfl.display._internal.Context3DBatchBuffer;
+import openfl.display._internal.Context3DGraphicsBatchBuffer;
 import openfl.display._internal.Context3DGraphics;
 import openfl.display3D.IndexBuffer3D;
 import openfl.display3D.VertexBuffer3D;
@@ -60,7 +60,7 @@ import js.html.CanvasRenderingContext2D;
 @:access(openfl.display.IGraphicsFill)
 @:access(openfl.display.Shader)
 @:access(openfl.display._internal.ShaderBuffer)
-@:access(openfl.display._internal.Context3DBatchBuffer)
+@:access(openfl.display._internal.Context3DGraphicsBatchBuffer)
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:final class Graphics
@@ -82,7 +82,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __softwareDirty:Bool;
 	@:noCompletion private var __transformDirty:Bool;
 	@:noCompletion private var __usedShaderBuffers:List<ShaderBuffer>;
-	@:noCompletion private var __buffer:Context3DBatchBuffer;
+	@:noCompletion private var __buffer:Context3DGraphicsBatchBuffer;
 	@:noCompletion private var __wireframe:Bool = #if openfl_gl_wireframe true #else false #end;
 	@:noCompletion private var __invalidateVertexBufferOnTransform:Bool;
 	@:noCompletion private var __visible:Bool;
@@ -322,7 +322,7 @@ import js.html.CanvasRenderingContext2D;
 
 		if (alphas.length < colors.length || ratios.length < colors.length) return;
 
-		__commands.beginGradientFill(type, colors, alphas, ratios, matrix, spreadMethod, interpolationMethod, focalPointRatio);
+		__commands.beginGradientFill(type, colors, alphas, ratios, matrix != null ? matrix.clone() : null, spreadMethod, interpolationMethod, focalPointRatio);
 
 		for (alpha in alphas)
 		{
@@ -1513,7 +1513,8 @@ import js.html.CanvasRenderingContext2D;
 
 		if (__buffer != null)
 		{
-			Context3DBatchBuffer.__pool.release(__buffer);
+			__buffer.dispose();
+			__buffer = null;
 		}
 	}
 

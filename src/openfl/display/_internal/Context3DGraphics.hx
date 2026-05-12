@@ -46,7 +46,7 @@ import openfl.display._internal.stats.DrawCallContext;
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.display._internal.DrawContext)
-@:access(openfl.display._internal.Context3DBatchBuffer)
+@:access(openfl.display._internal.Context3DGraphicsBatchBuffer)
 @:access(openfl.display._internal.Gradient)
 @:access(openfl.display._internal.Contour)
 @:access(openfl.display._internal.Fill)
@@ -430,12 +430,9 @@ class Context3DGraphics
 		var ctx = DrawContext.__pool.get();
 		ctx.graphics = graphics;
 
-		if (graphics.__buffer == null)
-		{
-			graphics.__buffer = Context3DBatchBuffer.__pool.get();
-		}
-
-		graphics.__buffer.reset(DATA_PER_VERTEX);
+		if (graphics.__buffer == null) graphics.__buffer = new Context3DGraphicsBatchBuffer(graphics, DATA_PER_VERTEX);
+		else
+			graphics.__buffer.reset();
 
 		// var matrix = graphics.__owner.__worldTransform;
 		// var scaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
@@ -457,8 +454,10 @@ class Context3DGraphics
 						y = graphics.__getScale9GridPositionY(y);
 					}
 					#end
-
-					ctx.newContour(x, y);
+					if (x != ctx.position.x || y != ctx.position.y)
+					{
+						ctx.newContour(x, y);
+					}
 
 				case LINE_TO:
 					var c = data.readLineTo();
@@ -726,6 +725,8 @@ class Context3DGraphics
 
 		buildDrawContext(ctx);
 		DrawContext.__pool.release(ctx);
+
+		graphics.__hardwareDirty = false;
 	}
 
 	private static function buildDrawContext(ctx:DrawContext):Void
@@ -821,23 +822,9 @@ class Context3DGraphics
 			{
 				var context = renderer.__context3D;
 
-				if (graphics.__hardwareDirty)
-				{
-					buildBuffer(graphics);
-					if (graphics.__buffer.wireframeIndexBuffer != null)
-					{
-						graphics.__buffer.wireframeIndexBuffer.dispose();
-						graphics.__buffer.wireframeIndexBuffer = null;
-					}
-					graphics.__hardwareDirty = false;
-				}
+				if (graphics.__hardwareDirty) buildBuffer(graphics);
 
 				graphics.__buffer.flush(context);
-
-				if (graphics.__wireframe && graphics.__buffer.wireframeIndexBuffer == null)
-				{
-					graphics.__buffer.prepareWireFrameBuffer();
-				}
 
 				var numBatches = graphics.__buffer.length;
 
@@ -862,6 +849,7 @@ class Context3DGraphics
 						var triCulling = graphics.__buffer.culling[i];
 						var fill = graphics.__buffer.fill[i];
 						var isTransparentStroke = graphics.__buffer.isTransparentStroke[i];
+						// isTransparentStroke = false;
 
 						var bitmap = fill.bitmap;
 						var bitmapSmooth = fill.bitmapSmooth;
@@ -872,7 +860,7 @@ class Context3DGraphics
 						if (maskRender)
 						{
 							renderer.setShader(renderer.__maskShader);
-							renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
+							// renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
 							renderer.applyMatrix(uMatrix);
 							renderer.updateShader();
 
@@ -894,10 +882,11 @@ class Context3DGraphics
 								renderer.__stencilReference++;
 
 								renderer.setShader(renderer.__maskShader);
-								renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
+								// renderer.applyBitmapData(Context3DMaskShader.opaqueBitmapData, true);
 								renderer.applyMatrix(uMatrix);
 								renderer.updateShader();
 
+								// draw mask positive
 								drawElements(context, graphics, renderer.__maskShader, indexOffset, numIndices, triCulling);
 
 								context.setColorMask(true, true, true, true);
@@ -936,7 +925,7 @@ class Context3DGraphics
 							else if (gradient != null)
 							{
 								renderer.setShader(shader);
-								renderer.applyGradient(gradient);
+								renderer.applyGradient(gradient); // applyGraphicsFillType 2 / 3
 								renderer.applyMatrix(uMatrix);
 								renderer.applyAlpha(worldAlpha);
 								renderer.applyColorTransform(worldColorTransform);
@@ -964,6 +953,7 @@ class Context3DGraphics
 									context.setStencilReferenceValue(renderer.__stencilReference, 0xFF, 0xFF);
 									context.setColorMask(false, false, false, false);
 
+									// draw mask negative
 									drawElements(context, graphics, renderer.__maskShader, indexOffset, numIndices, triCulling);
 									renderer.__stencilReference--;
 
@@ -1011,32 +1001,24 @@ class Context3DGraphics
 		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.strokeVertexBuffer, 2, FLOAT_3);
 		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.strokeVertexBuffer, 5, BYTES_4);
 
+		var oldCulling = context.__state.culling;
 		switch (triCulling)
 		{
 			case POSITIVE:
 				context.setCulling(FRONT);
-
 			case NEGATIVE:
 				context.setCulling(BACK);
-
 			case NONE:
 				context.setCulling(NONE);
 		}
 
 		context.drawTriangles(buffer.strokeIndexBuffer, indexOffset, Std.int(numIndices / 3));
-
 		#if gl_stats
 		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
 		graphics.__owner.__glDrawCalls++;
 		#end
 
-		switch (triCulling)
-		{
-			case POSITIVE, NONE:
-				context.setCulling(BACK);
-
-			default:
-		}
+		context.setCulling(oldCulling);
 	}
 
 	private static function drawElements(context:Context3D, graphics:Graphics, shader:Shader, indexOffset:Int, numIndices:Int, triCulling:TriangleCulling):Void
@@ -1047,14 +1029,13 @@ class Context3DGraphics
 		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, buffer.vertexBuffer, 2, FLOAT_3);
 		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, buffer.vertexBuffer, 5, BYTES_4);
 
+		var oldCulling = context.__state.culling;
 		switch (triCulling)
 		{
 			case POSITIVE:
 				context.setCulling(FRONT);
-
 			case NEGATIVE:
 				context.setCulling(BACK);
-
 			case NONE:
 				context.setCulling(NONE);
 		}
@@ -1073,13 +1054,7 @@ class Context3DGraphics
 		graphics.__owner.__glDrawCalls++;
 		#end
 
-		switch (triCulling)
-		{
-			case POSITIVE, NONE:
-				context.setCulling(BACK);
-
-			default:
-		}
+		context.setCulling(oldCulling);
 	}
 
 	public static function renderMask(graphics:Graphics, renderer:OpenGLRenderer):Void

@@ -13,6 +13,7 @@ import openfl.display._internal.Context3DTilemap;
 import openfl.display._internal.Context3DVideo;
 import openfl.display._internal.Gradient;
 import openfl.display._internal.ShaderBuffer;
+import openfl.display._internal.Proxy;
 import openfl.display3D.Context3D;
 import openfl.display3D.Context3DClearMask;
 import openfl.display3D.textures.TextureBase;
@@ -577,6 +578,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 			if (__currentShader.__focalPointRatio != null) __currentShader.__focalPointRatio.value = null;
 			if (__currentShader.__fillType != null) __currentShader.__fillType.value = null;
 			if (__currentShader.__linear != null) __currentShader.__linear.value = null;
+
 			__currentShader.__clearUseArray();
 		}
 	}
@@ -949,6 +951,11 @@ class OpenGLRenderer extends DisplayObjectRenderer
 				Context3DVideo.renderDrawable(cast object, this);
 			case TILEMAP:
 				Context3DTilemap.renderDrawable(cast object, this);
+			case PROXY:
+				for (object in cast(object, Proxy).objects)
+				{
+					__renderDrawable(object);
+				}
 			default:
 		}
 	}
@@ -979,6 +986,11 @@ class OpenGLRenderer extends DisplayObjectRenderer
 				Context3DVideo.renderDrawableMask(cast object, this);
 			case TILEMAP:
 				Context3DTilemap.renderDrawableMask(cast object, this);
+			case PROXY:
+				for (object in cast(object, Proxy).objects)
+				{
+					__renderDrawableMask(object);
+				}
 			default:
 		}
 	}

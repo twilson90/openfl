@@ -3,6 +3,7 @@ package openfl.display._internal;
 import openfl.display3D.Context3D;
 import openfl.display3D.IndexBuffer3D;
 import openfl.display3D.VertexBuffer3D;
+import openfl.display.Graphics;
 import openfl.geom.Rectangle;
 import openfl.utils.ArrayUtil;
 import openfl.utils.ColorUtil;
@@ -17,11 +18,13 @@ import haxe.io.Bytes;
 @:access(openfl.display._internal.Context3DGraphics)
 @:access(openfl.display3D.IndexBuffer3D)
 @:access(openfl.display3D.VertexBuffer3D)
-class Context3DBatchBuffer
+@:access(openfl.display.Graphics)
+class Context3DGraphicsBatchBuffer
 {
 	static private inline var EPSILON:Float = 1e-6;
 
 	private var context:Context3D;
+	private var graphics:Graphics;
 	private var dataPerVertex:Int;
 
 	public var length:Int = 0;
@@ -33,28 +36,24 @@ class Context3DBatchBuffer
 	public var wireframeIndexBuffer:IndexBuffer3D;
 	public var indexBufferData:UInt32Array;
 	public var vertexBufferData:Float32Array;
-	public var strokeIndexBufferData:UInt32Array;
-	public var strokeVertexBufferData:Float32Array;
 
 	public var vertexIndexPosition:Int;
 	public var vertexBufferPosition:Int;
 	public var indexBufferPosition:Int;
-	public var strokeVertexBufferPosition:Int;
-	public var strokeVertexIndexPosition:Int;
-	public var strokeIndexBufferPosition:Int;
 
 	public var numIndices:Array<Int> = [];
 	public var numVertices:Array<Int> = [];
 	public var culling:Array<TriangleCulling> = [];
 	public var fill:Array<Fill> = [];
 	public var bounds:Array<Rectangle> = [];
+	public var uv:Array<Rectangle> = [];
 	public var isTransparentStroke:Array<Bool> = [];
+	public var numTransparentStrokes:Int = 0;
 
 	public var needsFlush:Bool = true;
 
 	private static var __tempColorUInt32:UInt32Array;
 	private static var __tempColorFloat32:Float32Array;
-	private static var __pool:ObjectPool<Context3DBatchBuffer> = new ObjectPool<Context3DBatchBuffer>(() -> new Context3DBatchBuffer(), (b) -> b.reset());
 
 	static function __init__()
 	{
@@ -63,56 +62,72 @@ class Context3DBatchBuffer
 		__tempColorFloat32 = Float32Array.fromBytes(b);
 	}
 
-	public function new() {}
-
-	public function reset(dataPerVertex:Int = 0)
+	public function dispose():Void
 	{
-		this.dataPerVertex = dataPerVertex;
-		length = 0;
+		reset();
+		graphics = null;
+	}
 
+	public function reset():Void
+	{
+		if (vertexBuffer != null) vertexBuffer.dispose();
+		if (indexBuffer != null) indexBuffer.dispose();
+		if (strokeVertexBuffer != null) strokeVertexBuffer.dispose();
+		if (strokeIndexBuffer != null) strokeIndexBuffer.dispose();
+		if (wireframeIndexBuffer != null) wireframeIndexBuffer.dispose();
+
+		length = 0;
 		vertexIndexPosition = 0;
 		vertexBufferPosition = 0;
 		indexBufferPosition = 0;
-		strokeVertexIndexPosition = 0;
-		strokeVertexBufferPosition = 0;
-		strokeIndexBufferPosition = 0;
+		numTransparentStrokes = 0;
+
+		for (f in fill)
+			Fill.__pool.release(f);
+		for (r in bounds)
+			Rectangle.__pool.release(r);
+		for (r in uv)
+			Rectangle.__pool.release(r);
 
 		ArrayUtil.clear(numIndices);
 		ArrayUtil.clear(numVertices);
 		ArrayUtil.clear(culling);
-		for (f in fill)
-		{
-			Fill.__pool.release(f);
-		}
 		ArrayUtil.clear(fill);
-		for (b in bounds)
-		{
-			Rectangle.__pool.release(b);
-		}
 		ArrayUtil.clear(bounds);
+		ArrayUtil.clear(uv);
 		ArrayUtil.clear(isTransparentStroke);
 		needsFlush = true;
 	}
 
+	public function new(graphics:Graphics, dataPerVertex:Int)
+	{
+		this.graphics = graphics;
+		this.dataPerVertex = dataPerVertex;
+	}
+
 	public function append(vertices:Vector<Float>, indices:Vector<Int>, uvtData:Vector<Float>, culling:TriangleCulling, fill:Fill, isStroke:Bool)
 	{
-		var isTransparentStroke = fill.hasTransparency && isStroke;
-		var minX = Math.POSITIVE_INFINITY;
-		var minY = Math.POSITIVE_INFINITY;
-		var maxX = Math.NEGATIVE_INFINITY;
-		var maxY = Math.NEGATIVE_INFINITY;
 		var color = uint32toFloat32(fill.color != null ? fill.color : 0);
 
 		var numIndices = indices.length;
+		if (numIndices == 0) return;
 		var numVertices = Std.int(vertices.length / 2);
+		if (numVertices == 0) return;
 		var numTris = Std.int(numIndices / 3);
 
-		if (numIndices == 0) return;
-
+		var isTransparentStroke = isStroke && fill.hasTransparency;
 		var hasUVData = (uvtData != null);
 		var hasUVTData = (hasUVData && uvtData.length >= (numVertices * 3));
 		var uvStride = hasUVTData ? 3 : 2;
 		var uvOffset:Int, vertOffset:Int, offset:Int, x:Float, y:Float, u:Float, v:Float, t:Float;
+		var minX = Math.POSITIVE_INFINITY;
+		var minY = Math.POSITIVE_INFINITY;
+		var maxX = Math.NEGATIVE_INFINITY;
+		var maxY = Math.NEGATIVE_INFINITY;
+		var minU = Math.POSITIVE_INFINITY;
+		var minV = Math.POSITIVE_INFINITY;
+		var maxU = Math.NEGATIVE_INFINITY;
+		var maxV = Math.NEGATIVE_INFINITY;
 
 		vertexBufferData = resizeVertexBuffer(vertexBufferData, vertexBufferPosition + (numVertices * dataPerVertex));
 		for (i in 0...numVertices)
@@ -145,86 +160,23 @@ class Context3DBatchBuffer
 			if (y < minY) minY = y;
 			if (x > maxX) maxX = x;
 			if (y > maxY) maxY = y;
+
+			if (u < minU) minU = u;
+			if (v < minV) minV = v;
+			if (u > maxU) maxU = u;
+			if (v > maxV) maxV = v;
 		}
 
 		var bounds = Rectangle.__pool.get();
 		bounds.setTo(minX, minY, maxX - minX, maxY - minY);
 
+		var uv = Rectangle.__pool.get();
+		uv.setTo(minU, minV, maxU - minU, maxV - minV);
+
 		indexBufferData = resizeIndexBuffer(indexBufferData, indexBufferPosition + numIndices);
 		for (i in 0...numIndices)
 		{
 			indexBufferData[indexBufferPosition + i] = vertexIndexPosition + indices[i];
-		}
-
-		if (isTransparentStroke)
-		{
-			strokeVertexBufferData = resizeVertexBuffer(strokeVertexBufferData, strokeVertexBufferPosition + (dataPerVertex * 4));
-
-			var minU = Math.POSITIVE_INFINITY;
-			var minV = Math.POSITIVE_INFINITY;
-			var maxU = Math.NEGATIVE_INFINITY;
-			var maxV = Math.NEGATIVE_INFINITY;
-
-			// TODO: we could use fill.matrix here
-			for (i in 0...numVertices)
-			{
-				offset = vertexBufferPosition + (i * dataPerVertex);
-				var u = vertexBufferData[offset + 2];
-				var v = vertexBufferData[offset + 3];
-
-				if (u < minU) minU = u;
-				if (v < minV) minV = v;
-				if (u > maxU) maxU = u;
-				if (v > maxV) maxV = v;
-			}
-
-			offset = strokeVertexBufferPosition;
-
-			strokeVertexBufferData[offset] = minX;
-			strokeVertexBufferData[offset + 1] = minY;
-			strokeVertexBufferData[offset + 2] = minU;
-			strokeVertexBufferData[offset + 3] = minV;
-			strokeVertexBufferData[offset + 4] = 1.0;
-			strokeVertexBufferData[offset + 5] = color;
-
-			offset += dataPerVertex;
-			strokeVertexBufferData[offset] = maxX;
-			strokeVertexBufferData[offset + 1] = minY;
-			strokeVertexBufferData[offset + 2] = maxU;
-			strokeVertexBufferData[offset + 3] = minV;
-			strokeVertexBufferData[offset + 4] = 1.0;
-			strokeVertexBufferData[offset + 5] = color;
-
-			offset += dataPerVertex;
-			strokeVertexBufferData[offset] = maxX;
-			strokeVertexBufferData[offset + 1] = maxY;
-			strokeVertexBufferData[offset + 2] = maxU;
-			strokeVertexBufferData[offset + 3] = maxV;
-			strokeVertexBufferData[offset + 4] = 1.0;
-			strokeVertexBufferData[offset + 5] = color;
-
-			offset += dataPerVertex;
-			strokeVertexBufferData[offset] = minX;
-			strokeVertexBufferData[offset + 1] = maxY;
-			strokeVertexBufferData[offset + 2] = minU;
-			strokeVertexBufferData[offset + 3] = maxV;
-			strokeVertexBufferData[offset + 4] = 1.0;
-			strokeVertexBufferData[offset + 5] = color;
-
-			offset = strokeIndexBufferPosition;
-			strokeIndexBufferData = resizeIndexBuffer(strokeIndexBufferData, offset + 6);
-
-			strokeIndexBufferData[offset] = strokeVertexIndexPosition;
-			strokeIndexBufferData[offset + 1] = strokeVertexIndexPosition + 3;
-			strokeIndexBufferData[offset + 2] = strokeVertexIndexPosition + 1;
-
-			strokeIndexBufferData[offset + 3] = strokeVertexIndexPosition + 3;
-			strokeIndexBufferData[offset + 4] = strokeVertexIndexPosition + 2;
-			strokeIndexBufferData[offset + 5] = strokeVertexIndexPosition + 1;
-
-			strokeVertexIndexPosition += 4;
-			strokeVertexBufferPosition += 4 * dataPerVertex;
-			strokeIndexBufferPosition += 6;
 		}
 
 		vertexIndexPosition += numVertices;
@@ -238,6 +190,7 @@ class Context3DBatchBuffer
 			this.numIndices[i] += numIndices;
 			this.numVertices[i] += numVertices;
 			this.bounds[i].__expand(bounds.x, bounds.y, bounds.width, bounds.height);
+			this.uv[i].__expand(minU, minV, maxU - minU, maxV - minV);
 			return;
 		}
 		#end
@@ -250,7 +203,13 @@ class Context3DBatchBuffer
 		this.numVertices.push(numVertices);
 		this.culling.push(culling);
 		this.bounds.push(bounds);
+		this.uv.push(uv);
 		this.isTransparentStroke.push(isTransparentStroke);
+
+		if (isTransparentStroke)
+		{
+			numTransparentStrokes++;
+		}
 
 		length++;
 		needsFlush = true;
@@ -261,13 +220,14 @@ class Context3DBatchBuffer
 		var i = length - 1;
 		var lastFill = this.fill[i];
 		var lastCulling = this.culling[i];
-		if (isTransparentStroke || this.isTransparentStroke[i]) return false;
 		if (lastCulling != culling) return false;
 		if (lastFill.bitmap != fill.bitmap) return false;
 		if (lastFill.bitmapSmooth != fill.bitmapSmooth) return false;
 		if (lastFill.bitmapRepeat != fill.bitmapRepeat) return false;
 		if (!Gradient.__equals(lastFill.gradient, fill.gradient)) return false;
 		if (lastFill.shaderBuffer != fill.shaderBuffer) return false;
+		if (isTransparentStroke != this.isTransparentStroke[i]) return false;
+		if (isTransparentStroke == this.isTransparentStroke[i] && lastFill.color != fill.color) return false;
 		return true;
 	}
 
@@ -328,12 +288,73 @@ class Context3DBatchBuffer
 			bufferData[offset + 5] = i0;
 		}
 
-		if (wireframeIndexBuffer != null)
+		wireframeIndexBuffer = prepareIndexBuffer(wireframeIndexBuffer, bufferData, bufferData.length);
+	}
+
+	private function prepareStrokeBuffer()
+	{
+		var strokeIndexBufferData = new UInt32Array(numTransparentStrokes * 6);
+		var strokeVertexBufferData = new Float32Array(numTransparentStrokes * 4 * dataPerVertex);
+		var vertexOffset = 0;
+		var indexOffset = 0;
+		var vertexIndexOffset = 0;
+
+		for (i in 0...length)
 		{
-			wireframeIndexBuffer.dispose();
+			if (isTransparentStroke[i])
+			{
+				var bounds = this.bounds[i];
+				var uv = this.uv[i];
+				var fill = this.fill[i];
+				var color = uint32toFloat32(fill.color != null ? fill.color : 0);
+
+				strokeVertexBufferData[vertexOffset] = bounds.x;
+				strokeVertexBufferData[vertexOffset + 1] = bounds.y;
+				strokeVertexBufferData[vertexOffset + 2] = uv.x;
+				strokeVertexBufferData[vertexOffset + 3] = uv.y;
+				strokeVertexBufferData[vertexOffset + 4] = 1.0;
+				strokeVertexBufferData[vertexOffset + 5] = color;
+
+				vertexOffset += dataPerVertex;
+				strokeVertexBufferData[vertexOffset] = bounds.right;
+				strokeVertexBufferData[vertexOffset + 1] = bounds.y;
+				strokeVertexBufferData[vertexOffset + 2] = uv.right;
+				strokeVertexBufferData[vertexOffset + 3] = uv.y;
+				strokeVertexBufferData[vertexOffset + 4] = 1.0;
+				strokeVertexBufferData[vertexOffset + 5] = color;
+
+				vertexOffset += dataPerVertex;
+				strokeVertexBufferData[vertexOffset] = bounds.right;
+				strokeVertexBufferData[vertexOffset + 1] = bounds.bottom;
+				strokeVertexBufferData[vertexOffset + 2] = uv.right;
+				strokeVertexBufferData[vertexOffset + 3] = uv.bottom;
+				strokeVertexBufferData[vertexOffset + 4] = 1.0;
+				strokeVertexBufferData[vertexOffset + 5] = color;
+
+				vertexOffset += dataPerVertex;
+				strokeVertexBufferData[vertexOffset] = bounds.x;
+				strokeVertexBufferData[vertexOffset + 1] = bounds.bottom;
+				strokeVertexBufferData[vertexOffset + 2] = uv.x;
+				strokeVertexBufferData[vertexOffset + 3] = uv.bottom;
+				strokeVertexBufferData[vertexOffset + 4] = 1.0;
+				strokeVertexBufferData[vertexOffset + 5] = color;
+
+				strokeIndexBufferData[indexOffset] = vertexIndexOffset;
+				strokeIndexBufferData[indexOffset + 1] = vertexIndexOffset + 3;
+				strokeIndexBufferData[indexOffset + 2] = vertexIndexOffset + 1;
+
+				strokeIndexBufferData[indexOffset + 3] = vertexIndexOffset + 3;
+				strokeIndexBufferData[indexOffset + 4] = vertexIndexOffset + 2;
+				strokeIndexBufferData[indexOffset + 5] = vertexIndexOffset + 1;
+
+				vertexOffset += dataPerVertex;
+				indexOffset += 6;
+				vertexIndexOffset += 4;
+			}
 		}
-		wireframeIndexBuffer = context.createIndexBuffer(indexBufferPosition, DYNAMIC_DRAW);
-		wireframeIndexBuffer.uploadFromUInt32Array(bufferData);
+
+		strokeIndexBuffer = prepareIndexBuffer(strokeIndexBuffer, strokeIndexBufferData, strokeIndexBufferData.length);
+		strokeVertexBuffer = prepareVertexBuffer(strokeVertexBuffer, strokeVertexBufferData, strokeIndexBufferData.length);
 	}
 
 	private function prepareIndexBuffer(buffer:IndexBuffer3D, data:UInt32Array, length:Int):IndexBuffer3D
@@ -364,25 +385,13 @@ class Context3DBatchBuffer
 
 		this.context = context;
 
-		if (indexBufferPosition > 0)
-		{
-			indexBuffer = prepareIndexBuffer(indexBuffer, indexBufferData, indexBufferPosition);
-		}
+		if (indexBufferPosition > 0) indexBuffer = prepareIndexBuffer(indexBuffer, indexBufferData, indexBufferPosition);
 
-		if (vertexBufferPosition > 0)
-		{
-			vertexBuffer = prepareVertexBuffer(vertexBuffer, vertexBufferData, vertexBufferPosition);
-		}
+		if (vertexBufferPosition > 0) vertexBuffer = prepareVertexBuffer(vertexBuffer, vertexBufferData, vertexBufferPosition);
 
-		if (strokeIndexBufferPosition > 0)
-		{
-			strokeIndexBuffer = prepareIndexBuffer(strokeIndexBuffer, strokeIndexBufferData, strokeIndexBufferPosition);
-		}
+		if (numTransparentStrokes > 0) prepareStrokeBuffer();
 
-		if (strokeVertexBufferPosition > 0)
-		{
-			strokeVertexBuffer = prepareVertexBuffer(strokeVertexBuffer, strokeVertexBufferData, strokeVertexBufferPosition);
-		}
+		if (graphics.__wireframe) prepareWireFrameBuffer();
 
 		needsFlush = false;
 	}

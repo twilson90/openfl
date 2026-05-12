@@ -13,4 +13,5 @@ package openfl.display._internal;
 	public var VIDEO = 8;
 	public var TILEMAP = 9;
 	public var DOM_ELEMENT = 10;
+	public var PROXY = 11;
 }
