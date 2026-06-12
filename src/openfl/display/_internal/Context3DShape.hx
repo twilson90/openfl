@@ -3,10 +3,6 @@ package openfl.display._internal;
 #if !flash
 import openfl.display.DisplayObject;
 import openfl.display.OpenGLRenderer;
-#if gl_stats
-import openfl.display._internal.stats.Context3DStats;
-import openfl.display._internal.stats.DrawCallContext;
-#end
 import openfl.geom.Matrix;
 
 #if !openfl_debug
@@ -64,10 +60,7 @@ class Context3DShape
 				var indexBuffer = graphics.__bitmap.getIndexBuffer(context);
 				context.drawTriangles(indexBuffer);
 
-				#if gl_stats
-				Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-				shape.__glDrawCalls++;
-				#end
+				renderer.__incrementGLDrawCalls(shape);
 
 				renderer.__clearShader();
 			}
@@ -102,10 +95,7 @@ class Context3DShape
 				var indexBuffer = graphics.__bitmap.getIndexBuffer(context);
 				context.drawTriangles(indexBuffer);
 
-				#if gl_stats
-				Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-				shape.__glDrawCalls++;
-				#end
+				renderer.__incrementGLDrawCalls(shape);
 
 				renderer.__clearShader();
 			}

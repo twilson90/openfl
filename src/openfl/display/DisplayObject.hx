@@ -1022,20 +1022,19 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __worldVisible:Bool;
 	@:noCompletion private var __worldVisibleChanged:Bool;
 	@:noCompletion private var __worldTransformInvalid:Bool;
+	@:noCompletion private var __worldScale(get, never):Float;
 	@:noCompletion private var __worldZ:Int;
 	@:noCompletion private var __localBounds:Rectangle;
 	@:noCompletion private var __localBoundsDirty:Bool;
 	@:noCompletion private var __alphaMaskFilter:AlphaMaskFilter;
 	@:noCompletion private var __hasAlphaMask:Bool;
+	@:noCompletion private var ___worldScale:Null<Float>;
 
 	#if (js && html5)
 	@:noCompletion private var __canvas:CanvasElement;
 	@:noCompletion private var __context:CanvasRenderingContext2D;
 	@:noCompletion private var __style:CSSStyleDeclaration;
 	@:noCompletion private var __opaqueBackgroundElement:Element;
-	#end
-	#if gl_stats
-	@:noCompletion private var __glDrawCalls:Int = 0;
 	#end
 
 	#if openfljs
@@ -1873,6 +1872,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (__worldTransformInvalid) return;
 
 		__worldTransformInvalid = true;
+		___worldScale = null;
 
 		if (__graphics != null)
 		{
@@ -2111,6 +2111,27 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 		__mask = value;
 	}
+
+	#if gl_stats
+	@:noCompletion private inline function __getGLDrawCalls(recursive:Bool = false):Int
+	{
+		var renderer = cast(Lib.current.stage.__renderer, openfl.display.OpenGLRenderer);
+		if (renderer == null) return 0;
+		var result = renderer.__getGLDrawCalls(this);
+		if (__cacheBitmap != null)
+		{
+			result += renderer.__getGLDrawCalls(__cacheBitmap);
+		}
+		if (recursive && __children != null)
+		{
+			for (c in __children)
+			{
+				result += c.__getGLDrawCalls(true);
+			}
+		}
+		return result;
+	}
+	#end
 
 	// Get & Set Methods
 	@:keep @:noCompletion private function get_alpha():Float
@@ -2653,6 +2674,18 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (value != value) value = 0.0; // flash converts NaN to 0.0
 		if (value != __transform.ty) __setTransformDirty();
 		return __transform.ty = value;
+	}
+
+	@:keep @:noCompletion private function get___worldScale():Float
+	{
+		if (___worldScale == null)
+		{
+			var worldMatrix = __getWorldTransform();
+			var worldScaleX2 = worldMatrix.a * worldMatrix.a + worldMatrix.b * worldMatrix.b;
+			var worldScaleY2 = worldMatrix.c * worldMatrix.c + worldMatrix.d * worldMatrix.d;
+			___worldScale = Math.sqrt(Math.max(worldScaleX2, worldScaleY2));
+		}
+		return ___worldScale;
 	}
 }
 #else

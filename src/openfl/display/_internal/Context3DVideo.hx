@@ -3,10 +3,6 @@ package openfl.display._internal;
 #if !flash
 import openfl.display.OpenGLRenderer;
 import openfl.media.Video;
-#if gl_stats
-import openfl.display._internal.stats.Context3DStats;
-import openfl.display._internal.stats.DrawCallContext;
-#end
 
 #if !openfl_debug
 @:fileXml('tags="haxe,release"')
@@ -80,10 +76,7 @@ class Context3DVideo
 			var indexBuffer = video.__getIndexBuffer(context);
 			context.drawTriangles(indexBuffer);
 
-			#if gl_stats
-			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-			video.__glDrawCalls++;
-			#end
+			renderer.__incrementGLDrawCalls(video);
 
 			renderer.__clearShader();
 
@@ -125,10 +118,7 @@ class Context3DVideo
 			var indexBuffer = video.__getIndexBuffer(context);
 			context.drawTriangles(indexBuffer);
 
-			#if gl_stats
-			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-			video.__glDrawCalls++;
-			#end
+			renderer.__incrementGLDrawCalls(video);
 
 			renderer.__clearShader();
 		}

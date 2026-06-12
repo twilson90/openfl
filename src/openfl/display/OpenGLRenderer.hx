@@ -1,6 +1,7 @@
 package openfl.display;
 
 #if !flash
+import haxe.Constraints.IMap;
 import openfl.display._internal.Context3DBitmap;
 import openfl.display._internal.Context3DBitmapData;
 import openfl.display._internal.Context3DDisplayObject;
@@ -12,8 +13,8 @@ import openfl.display._internal.Context3DTextField;
 import openfl.display._internal.Context3DTilemap;
 import openfl.display._internal.Context3DVideo;
 import openfl.display._internal.Gradient;
-import openfl.display._internal.ShaderBuffer;
 import openfl.display._internal.Proxy;
+import openfl.display._internal.ShaderBuffer;
 import openfl.display3D.Context3D;
 import openfl.display3D.Context3DClearMask;
 import openfl.display3D.textures.TextureBase;
@@ -21,11 +22,13 @@ import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
 import openfl.utils.ObjectPool;
+import openfl.utils._internal.Float32Array;
+import openfl.utils._internal.IndexArray;
 #if lime
 import lime.graphics.WebGLRenderContext;
 import lime.graphics.opengl.ext.KHR_debug;
-import lime.math.Matrix4;
 import lime.math.ARGB;
+import lime.math.Matrix4;
 #end
 #if gl_stats
 import openfl.display._internal.stats.Context3DStats;
@@ -43,6 +46,7 @@ import openfl.display._internal.stats.DrawCallContext;
 @:noDebug
 #end
 @:access(lime.graphics.GLRenderContext)
+@:access(lime.utils.ArrayBufferView)
 @:access(openfl.display._internal.ShaderBuffer)
 @:access(openfl.display3D.Context3D)
 @:access(openfl.display.BitmapData)
@@ -74,6 +78,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private static var __fillTypeValue:Array<Int> = [0];
 	@:noCompletion private static var __linearValue:Array<Int> = [0];
 	@:noCompletion private static var __focalPointRatioValue:Array<Float> = [0];
+
+	@:noCompletion private static var __worldBounds:Rectangle = new Rectangle();
 
 	/**
 		The current OpenGL render context
@@ -116,6 +122,13 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private var __upscaled:Bool;
 	@:noCompletion private var __values:Array<Float>;
 	@:noCompletion private var __width:Int;
+	#if gl_stats
+	@:noCompletion private var __glDrawCallsFront:Map<IBitmapDrawable, Int>;
+	@:noCompletion private var __glDrawCallsBack:Map<IBitmapDrawable, Int>;
+	#end
+
+	private static var __wireframeKeyIntMap:Map<Int, Bool> = new Map<Int, Bool>();
+	private static var __wireframeKeyStringMap:Map<String, Bool> = new Map<String, Bool>();
 
 	// @:noCompletion private var __filterManager:FilterManager;
 
@@ -189,6 +202,11 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		__initShader(__defaultShader);
 
 		__scrollRectMasks = new ObjectPool<Shape>(function() return new Shape());
+
+		#if gl_stats
+		__glDrawCallsFront = new Map();
+		__glDrawCallsBack = new Map();
+		#end
 	}
 
 	/**
@@ -929,8 +947,16 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	{
 		if (object == null) return;
 
-		#if gl_stats
-		object.__glDrawCalls = 0;
+		#if !openfl_disable_gl_render_culling
+		if (__stage != null)
+		{
+			__worldBounds.setEmpty();
+			object.__getBounds(__worldBounds, object.__worldTransform);
+			if (!__stage.__bounds.intersects(__worldBounds))
+			{
+				return;
+			}
+		}
 		#end
 
 		switch (object.__drawableType)
@@ -963,10 +989,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private function __renderDrawableMask(object:IBitmapDrawable):Void
 	{
 		if (object == null) return;
-
-		#if gl_stats
-		object.__glDrawCalls = 0;
-		#end
 
 		switch (object.__drawableType)
 		{
@@ -1025,11 +1047,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		if (shader.__textureCoord != null) __context3D.setVertexBufferAt(shader.__textureCoord.index, vertexBuffer, 3, FLOAT_2);
 		var indexBuffer = source.getIndexBuffer(__context3D);
 		__context3D.drawTriangles(indexBuffer);
-
-		#if gl_stats
-		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		__defaultRenderTarget.__glDrawCalls++;
-		#end
 
 		if (cacheRTT != null)
 		{
@@ -1188,6 +1205,90 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		{
 			__currentShader.__updateFromBuffer(__currentShaderBuffer, bufferOffset);
 		}
+	}
+
+	@:noCompletion private inline function __incrementGLDrawCalls(drawable:IBitmapDrawable):Void
+	{
+		#if gl_stats
+		var curr = __glDrawCallsBack.get(drawable);
+		__glDrawCallsBack.set(drawable, curr != null ? curr + 1 : 1);
+		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
+		#end
+	}
+
+	@:noCompletion private inline function __getGLDrawCalls(drawable:IBitmapDrawable):Int
+	{
+		#if gl_stats
+		var curr = __glDrawCallsFront.get(drawable);
+		return curr != null ? curr : 0;
+		#else
+		return 0;
+		#end
+	}
+
+	@:noCompletion private inline function __clearGLDrawCalls():Void
+	{
+		#if gl_stats
+		var temp = __glDrawCallsFront;
+		__glDrawCallsFront = __glDrawCallsBack;
+		__glDrawCallsBack = temp;
+		__glDrawCallsBack.clear();
+		#end
+	}
+
+	@:noCompletion private function __createWireFrameBuffer(indices:IndexArray, numVertices:Int)
+	{
+		var numTris = Std.int(indices.length / 3);
+
+		var indexData = new IndexArray(numTris * 6, numVertices); // a lot more than we need but the lowest predictable limit without iterating.
+		var useIntKeys = numVertices < 65536;
+		var wireframeIndex = 0;
+		var map:IMap<Dynamic, Bool> = useIntKeys ? __wireframeKeyIntMap : __wireframeKeyStringMap;
+		var i0:Int, i1:Int, i2:Int, key1:Dynamic, key2:Dynamic, key3:Dynamic;
+		var i:Int = 0;
+
+		for (i in 0...numTris)
+		{
+			i0 = indices[i * 3];
+			i1 = indices[i * 3 + 1];
+			i2 = indices[i * 3 + 2];
+			key1 = __getWireFrameIndexKey(i0, i1, useIntKeys);
+			key2 = __getWireFrameIndexKey(i1, i2, useIntKeys);
+			key3 = __getWireFrameIndexKey(i2, i0, useIntKeys);
+			if (!map.exists(key1))
+			{
+				map.set(key1, true);
+				indexData[wireframeIndex] = i0;
+				indexData[wireframeIndex + 1] = i1;
+				wireframeIndex += 2;
+			}
+			if (!map.exists(key2))
+			{
+				map.set(key2, true);
+				indexData[wireframeIndex] = i1;
+				indexData[wireframeIndex + 1] = i2;
+				wireframeIndex += 2;
+			}
+			if (!map.exists(key3))
+			{
+				map.set(key3, true);
+				indexData[wireframeIndex] = i2;
+				indexData[wireframeIndex + 1] = i0;
+				wireframeIndex += 2;
+			}
+		}
+
+		map.clear();
+		var buffer = __context3D.createIndexBuffer(wireframeIndex, DYNAMIC_DRAW);
+		buffer.uploadFromTypedArray(indexData.data.subarray(0, wireframeIndex));
+		return buffer;
+	}
+
+	private static inline function __getWireFrameIndexKey(a:Int, b:Int, isInt:Bool):Dynamic
+	{
+		var min = a < b ? a : b;
+		var max = a < b ? b : a;
+		return isInt ? (min << 16) | max : min + ":" + max;
 	}
 }
 #else

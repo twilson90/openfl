@@ -1467,11 +1467,7 @@ import js.html.CanvasRenderingContext2D;
 		if (__wireframe != value)
 		{
 			__wireframe = value;
-			if (__buffer != null && __buffer.wireframeIndexBuffer != null)
-			{
-				__buffer.wireframeIndexBuffer.dispose();
-				__buffer.wireframeIndexBuffer = null;
-			}
+			if (__buffer != null) __buffer.__wireframeDirty = true;
 		}
 		return value;
 	}

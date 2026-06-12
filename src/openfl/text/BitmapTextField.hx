@@ -80,9 +80,10 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 	private var __textWidth:Float = 0.0;
 	private var __textHeight:Float = 0.0;
 	private var __numLines:Int = 0;
+	private var __tilemap:Tilemap;
 	private var __layoutDirty:Bool = true;
 	private var __graphicsDirty:Bool = true;
-	private var __tilemap:Tilemap;
+	private var __tilemapDirty:Bool = true;
 
 	public var font(default, set):BitmapFont;
 	public var text(default, set):String = "";
@@ -146,7 +147,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		if (textColor != value)
 		{
 			textColor = value;
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 
 		return value;
@@ -279,23 +280,23 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		}
 		__textHeight = (lineHeight + lineSpacing) * __numLines - lineSpacing;
 
-		__layoutDirty = false;
-		__graphicsDirty = true;
-
 		var p = paddingAndBorder;
+
 		if (autoSizeV)
 		{
 			__fieldHeight = __textHeight + 2 * p;
+			__graphicsDirty = true;
 		}
 		if (autoSize)
 		{
 			__fieldWidth = __textWidth + 2 * p;
+			__graphicsDirty = true;
 		}
+
+		__tilemapDirty = true;
+		__layoutDirty = false;
 	}
 
-	/**
-	 * Internal method for updating the view of the text component
-	 */
 	private function __updateGraphics():Void
 	{
 		if (!__graphicsDirty) return;
@@ -308,6 +309,13 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 			if (borderColor != null) graphics.lineStyle(1, borderColor & 0x00FFFFFF, ((borderColor >> 24) & 0xFF) / 255);
 			graphics.drawRect(0, 0, __fieldWidth, __fieldHeight);
 		}
+
+		__graphicsDirty = false;
+	}
+
+	private function __updateTilemap():Void
+	{
+		if (!__tilemapDirty) return;
 
 		var w = Math.ceil(__fieldWidth);
 		var h = Math.ceil(__fieldHeight);
@@ -329,32 +337,6 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 			__tilemap.height = h;
 			__tilemap.smoothing = smoothing;
 		}
-
-		if (textColor != null)
-		{
-			var color:UInt = textColor;
-			var rgb = color & 0x00FFFFFF;
-			var a = ((color >> 24) & 0xFF) / 255;
-			tempColorTransform.color = color;
-			tempColorTransform.alphaMultiplier = a;
-		}
-		else
-		{
-			#if flash
-			tempColorTransform.redMultiplier = 1.0;
-			tempColorTransform.greenMultiplier = 1.0;
-			tempColorTransform.blueMultiplier = 1.0;
-			tempColorTransform.alphaMultiplier = 1.0;
-			tempColorTransform.redOffset = 0;
-			tempColorTransform.greenOffset = 0;
-			tempColorTransform.blueOffset = 0;
-			tempColorTransform.alphaOffset = 0;
-			#else
-			tempColorTransform.__identity();
-			#end
-		}
-
-		__tilemap.transform.colorTransform = tempColorTransform;
 		__tilemap.pixelSnapping = pixelSnapping;
 
 		if (size > 0)
@@ -446,37 +428,63 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 			}
 		}
 
-		#if !flash
-		var shader:BitmapTextFieldShader = cast __tilemap.shader;
-		var fillColor:ARGB = this.textColor == null ? 0xffffffff : this.textColor;
-		var outlineColor:ARGB = this.outlineColor == null ? 0xff000000 : this.outlineColor;
+		var isDistanceField = #if flash false; #else font.distanceFieldType != DistanceFieldType.NONE; #end
 
-		shader.distanceFieldType.value = [
-			switch font.distanceFieldType
+		if (isDistanceField)
+		{
+			var shader:BitmapTextFieldShader = cast __tilemap.shader;
+			var fillColor:ARGB = this.textColor == null ? 0xffffffff : this.textColor;
+			var outlineColor:ARGB = this.outlineColor == null ? 0xff000000 : this.outlineColor;
+
+			shader.distanceFieldType.value = [
+				switch font.distanceFieldType
+				{
+					case DistanceFieldType.MSDF:
+						1;
+					case DistanceFieldType.SDF:
+						2;
+					case DistanceFieldType.PSDF:
+						3;
+					default:
+						0;
+				}
+			];
+			shader.distanceRange.value = [font.distanceRange];
+			shader.fillColor.value = [fillColor.r / 255, fillColor.g / 255, fillColor.b / 255, fillColor.a / 255];
+			shader.outlineColor.value = [
+				outlineColor.r / 255,
+				outlineColor.g / 255,
+				outlineColor.b / 255,
+				outlineColor.a / 255
+			];
+			shader.outlineWidth.value = [outlineWidth / size];
+			shader.weight.value = [weight];
+		}
+		else
+		{
+			if (textColor == null)
 			{
-				case DistanceFieldType.MSDF:
-					1;
-				case DistanceFieldType.SDF:
-					2;
-				case DistanceFieldType.PSDF:
-					3;
-				default:
-					0;
+				tempColorTransform.redMultiplier = 1.0;
+				tempColorTransform.greenMultiplier = 1.0;
+				tempColorTransform.blueMultiplier = 1.0;
+				tempColorTransform.alphaMultiplier = 1.0;
+				tempColorTransform.redOffset = 0;
+				tempColorTransform.greenOffset = 0;
+				tempColorTransform.blueOffset = 0;
+				tempColorTransform.alphaOffset = 0;
 			}
-		];
-		shader.distanceRange.value = [font.distanceRange];
-		shader.fillColor.value = [fillColor.r / 255, fillColor.g / 255, fillColor.b / 255, fillColor.a / 255];
-		shader.outlineColor.value = [
-			outlineColor.r / 255,
-			outlineColor.g / 255,
-			outlineColor.b / 255,
-			outlineColor.a / 255
-		];
-		shader.outlineWidth.value = [outlineWidth / size];
-		shader.weight.value = [weight];
-		#end
+			else
+			{
+				var color:UInt = textColor;
+				var rgb = color & 0x00FFFFFF;
+				var a = ((color >> 24) & 0xFF) / 255;
+				tempColorTransform.color = color;
+				tempColorTransform.alphaMultiplier = a;
+			}
+			__tilemap.transform.colorTransform = tempColorTransform;
+		}
 
-		__graphicsDirty = false;
+		__tilemapDirty = false;
 	}
 
 	#if !flash
@@ -489,6 +497,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		{
 			__fieldWidth = value;
 			__layoutDirty = true;
+			__graphicsDirty = true;
 		}
 		#if (haxe_ver >= 4.3)
 		return value;
@@ -505,6 +514,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		{
 			__fieldHeight = value;
 			__layoutDirty = true;
+			__graphicsDirty = true;
 		}
 		#if (haxe_ver >= 4.3)
 		return value;
@@ -516,7 +526,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		if (alignment != value)
 		{
 			alignment = value;
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 
 		return value;
@@ -527,7 +537,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		if (alignV != value)
 		{
 			alignV = value;
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 
 		return value;
@@ -549,7 +559,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		if (lineSpacing != value)
 		{
 			lineSpacing = value;
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 
 		return lineSpacing;
@@ -633,7 +643,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 		if (pixelSnapping != value)
 		{
 			pixelSnapping = value;
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 		return value;
 	}
@@ -722,7 +732,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 	{
 		if (smoothing != value)
 		{
-			__graphicsDirty = true;
+			__tilemapDirty = true;
 		}
 		return smoothing = value;
 	}
@@ -732,6 +742,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 	{
 		__updateLayout();
 		__updateGraphics();
+		__updateTilemap();
 		__tilemap.__renderFlash();
 	}
 	#else
@@ -757,6 +768,7 @@ class BitmapTextField extends Sprite #if flash implements IDisplayObject #end
 	{
 		__updateLayout();
 		__updateGraphics();
+		__updateTilemap();
 		super.__enterFrame(deltaTime);
 	}
 	#end

@@ -58,16 +58,17 @@ class Context3DDisplayObject
 			{
 				__opaqueBackgroundShape = new Shape();
 				__opaqueBackgroundShape.__renderable = true;
+				__opaqueBackgroundShape.graphics.beginFill(0xffffff);
+				__opaqueBackgroundShape.graphics.drawRect(0, 0, 1, 1);
 			}
 
-			var shape = __opaqueBackgroundShape;
-			shape.graphics.clear();
-			shape.graphics.beginFill(displayObject.opaqueBackground);
 			displayObject.__getRenderBounds(rect, Matrix.__identity);
-			shape.__renderTransform.copyFrom(renderTransform);
-			shape.graphics.drawRect(rect.x, rect.y, rect.width, rect.height);
+			__opaqueBackgroundShape.__renderTransform.setTo(rect.width, 0, 0, rect.height, rect.x, rect.y);
+			__opaqueBackgroundShape.__renderTransform.concat(renderTransform);
+			__opaqueBackgroundShape.__worldColorTransform.color = displayObject.opaqueBackground;
+			Context3DDisplayObject.render(__opaqueBackgroundShape, renderer);
 
-			Context3DDisplayObject.render(shape, renderer);
+			renderer.__incrementGLDrawCalls(displayObject);
 
 			renderer.__popMaskObject(displayObject);
 

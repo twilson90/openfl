@@ -1,11 +1,6 @@
 package openfl.display._internal;
 
 #if !flash
-#if gl_stats
-import openfl.display._internal.stats.Context3DStats;
-import openfl.display._internal.stats.DrawCallContext;
-#end
-
 #if !openfl_debug
 @:fileXml(' tags="haxe,release" ')
 @:noDebug
@@ -40,18 +35,9 @@ class Context3DBitmapData
 		var indexBuffer = bitmapData.getIndexBuffer(context);
 		context.drawTriangles(indexBuffer);
 
-		__incrementDrawCalls(renderer);
+		renderer.__incrementGLDrawCalls(bitmapData);
 
 		renderer.__clearShader();
-	}
-
-	private static inline function __incrementDrawCalls(renderer:OpenGLRenderer):Void
-	{
-		#if gl_stats
-		var target:IBitmapDrawable = renderer.__defaultRenderTarget == null ? renderer.__stage : renderer.__defaultRenderTarget;
-		Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-		target.__glDrawCalls++;
-		#end
 	}
 
 	public static function renderDrawableMask(bitmapData:BitmapData, renderer:OpenGLRenderer):Void
@@ -71,7 +57,7 @@ class Context3DBitmapData
 		var indexBuffer = bitmapData.getIndexBuffer(context);
 		context.drawTriangles(indexBuffer);
 
-		__incrementDrawCalls(renderer);
+		renderer.__incrementGLDrawCalls(bitmapData);
 
 		renderer.__clearShader();
 	}

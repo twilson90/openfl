@@ -1030,6 +1030,7 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 	@:noCompletion private var __wasDirty:Bool;
 	@:noCompletion private var __wasFullscreen:Bool;
 	@:noCompletion private var __isExitingFrame:Bool;
+	@:noCompletion private var __bounds:Rectangle;
 	#if lime
 	@:noCompletion private var __primaryTouch:Touch;
 	#end
@@ -1112,6 +1113,7 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 		__displayMatrix = new Matrix();
 		__displayRect = new Rectangle();
 		__renderDirty = true;
+		__bounds = new Rectangle();
 
 		stage3Ds = new Vector();
 		for (i in 0...#if mobile 2 #else 4 #end)
@@ -2405,6 +2407,7 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 
 		#if gl_stats
 		Context3DStats.resetDrawCalls();
+		cast(__renderer, openfl.display.OpenGLRenderer).__clearGLDrawCalls();
 		#end
 
 		var event:Event = null;
@@ -3679,6 +3682,7 @@ class Stage extends DisplayObjectContainer #if lime implements IModule #end
 
 		if (stageWidth != cacheWidth || stageHeight != cacheHeight)
 		{
+			__bounds.setTo(0, 0, stageWidth, stageHeight);
 			__setTransformDirty();
 
 			var event:Event = null;

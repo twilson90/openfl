@@ -6,6 +6,8 @@ import openfl.utils.ArrayUtil;
 import openfl.display.BitmapData;
 import openfl.geom.Rectangle;
 import openfl.geom.Matrix;
+import openfl.utils._internal.FastHash;
+import openfl.utils._internal.LRUCache;
 
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
@@ -20,12 +22,8 @@ class Gradient
 	public var spreadMethod:SpreadMethod;
 	public var focalPointRatio:Float;
 
-	private static var bitmapCache:Map<String, BitmapData> = new Map<String, BitmapData>();
-	private static var bitmapCacheKeys:Array<String> = [];
-
+	private static var __bitmapCache:LRUCache<BitmapData> = new LRUCache<BitmapData>(128);
 	private static var __pool:ObjectPool<Gradient> = new ObjectPool<Gradient>(() -> new Gradient(), (c) -> c.identity());
-
-	private static var MAX_GRADIENTS = 128;
 
 	public function new(colors:Array<Int> = null, alphas:Array<Float> = null, ratios:Array<Int> = null, matrix:Matrix = null, type:GradientType = LINEAR,
 			interpolationMethod:InterpolationMethod = RGB, spreadMethod:SpreadMethod = PAD, focalPointRatio:Float = 0)
@@ -82,51 +80,43 @@ class Gradient
 
 	public function getBitmap():BitmapData
 	{
-		var hash = getHash();
-		if (bitmapCache.exists(hash)) return bitmapCache.get(hash);
-
-		var bmd = new BitmapData(256, 1, true, 0);
-		var pixels = new ByteArray();
-		var index = 0;
-		var lastIndex = ratios.length - 1;
-
-		for (x in 0...256)
+		var hash = getBitmapHash();
+		if (!__bitmapCache.exists(hash))
 		{
-			var r = x;
+			var bmd = new BitmapData(256, 1, true, 0);
+			var pixels = new ByteArray();
+			var index = 0;
+			var lastIndex = ratios.length - 1;
 
-			while (index < lastIndex - 1 && r > ratios[index + 1])
-				index++;
+			for (x in 0...256)
+			{
+				var r = x;
 
-			var r0 = ratios[index];
-			var r1 = ratios[index + 1];
-			var c0 = colors[index];
-			var c1 = colors[index + 1];
-			var a0 = alphas[index];
-			var a1 = alphas[index + 1];
-			var f = (r - r0) / (r1 - r0);
-			var aa = Std.int((a0 * 255 * (1 - f)) + (a1 * 255 * f));
-			var rr = Std.int(((c0 >> 16 & 0xFF) * (1 - f)) + ((c1 >> 16 & 0xFF) * f));
-			var gg = Std.int(((c0 >> 8 & 0xFF) * (1 - f)) + ((c1 >> 8 & 0xFF) * f));
-			var bb = Std.int(((c0 & 0xFF) * (1 - f)) + ((c1 & 0xFF) * f));
-			pixels.writeUnsignedInt((aa << 24) | (rr << 16) | (gg << 8) | bb);
+				while (index < lastIndex - 1 && r > ratios[index + 1])
+					index++;
+
+				var r0 = ratios[index];
+				var r1 = ratios[index + 1];
+				var c0 = colors[index];
+				var c1 = colors[index + 1];
+				var a0 = alphas[index];
+				var a1 = alphas[index + 1];
+				var f = (r - r0) / (r1 - r0);
+				var aa = Std.int((a0 * 255 * (1 - f)) + (a1 * 255 * f));
+				var rr = Std.int(((c0 >> 16 & 0xFF) * (1 - f)) + ((c1 >> 16 & 0xFF) * f));
+				var gg = Std.int(((c0 >> 8 & 0xFF) * (1 - f)) + ((c1 >> 8 & 0xFF) * f));
+				var bb = Std.int(((c0 & 0xFF) * (1 - f)) + ((c1 & 0xFF) * f));
+				pixels.writeUnsignedInt((aa << 24) | (rr << 16) | (gg << 8) | bb);
+			}
+
+			pixels.position = 0;
+			var rect = Rectangle.__pool.get();
+			rect.setTo(0, 0, 256, 1);
+			bmd.setPixels(rect, pixels);
+			Rectangle.__pool.release(rect);
+			__bitmapCache.set(hash, bmd);
 		}
-
-		pixels.position = 0;
-		var rect = Rectangle.__pool.get();
-		rect.setTo(0, 0, 256, 1);
-		bmd.setPixels(rect, pixels);
-		Rectangle.__pool.release(rect);
-
-		bitmapCache.set(hash, bmd);
-		bitmapCacheKeys.push(hash);
-
-		if (bitmapCacheKeys.length > MAX_GRADIENTS)
-		{
-			var old = bitmapCacheKeys.shift();
-			bitmapCache.remove(old);
-		}
-
-		return bmd;
+		return __bitmapCache.get(hash);
 	}
 
 	public function copyFrom(other:Gradient)
@@ -153,10 +143,13 @@ class Gradient
 		return g1.equals(g2);
 	}
 
-	public function getHash():String
+	public function getBitmapHash():FastHash
 	{
-		return colors.join(",") + ":" + alphas.join(",") + ":" + ratios.join(",") + ":" + matrix.toString() + ":" + type + ":" + interpolationMethod + ":"
-			+ focalPointRatio + ":" + spreadMethod;
+		var hash = new FastHash();
+		hash += colors;
+		hash += alphas;
+		hash += ratios;
+		return hash;
 	}
 
 	static private inline function arrayEquals<T>(a1:Array<T>, a2:Array<T>)

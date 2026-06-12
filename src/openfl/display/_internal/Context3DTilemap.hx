@@ -15,10 +15,6 @@ import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
 import openfl.text.BitmapTextField;
 import openfl.utils._internal.Float32Array;
-#if gl_stats
-import openfl.display._internal.stats.Context3DStats;
-import openfl.display._internal.stats.DrawCallContext;
-#end
 
 #if !openfl_debug
 @:fileXml('tags="haxe,release"')
@@ -377,12 +373,9 @@ class Context3DTilemap
 
 				context.drawTriangles(context.__quadIndexBuffer, 0, length * 2);
 				lastFlushedPosition += length;
-			}
 
-			#if gl_stats
-			Context3DStats.incrementDrawCall(DrawCallContext.STAGE);
-			tilemap.__glDrawCalls++;
-			#end
+				renderer.__incrementGLDrawCalls(tilemap);
+			}
 
 			renderer.__clearShader();
 		}

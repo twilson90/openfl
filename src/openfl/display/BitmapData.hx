@@ -42,10 +42,6 @@ import lime.math.Vector2;
 #if (js && html5)
 import js.html.CanvasElement;
 #end
-#if gl_stats
-import openfl.display._internal.stats.Context3DStats;
-import openfl.display._internal.stats.DrawCallContext;
-#end
 
 /**
 	The BitmapData class lets you work with the data (pixels) of a Bitmap
@@ -232,9 +228,6 @@ class BitmapData implements IBitmapDrawable
 	@:noCompletion private var __worldColorTransform:ColorTransform;
 	@:noCompletion private var __worldTransform:Matrix;
 	@:noCompletion private var __asset:Bool;
-	#if gl_stats
-	@:noCompletion private var __glDrawCalls:Int = 0;
-	#end
 
 	/**
 		Creates a BitmapData object with a specified width and height. If you specify a value for

@@ -48,7 +48,7 @@ import openfl.Vector;
 		__id = gl.createBuffer();
 
 		__usage = (bufferUsage == Context3DBufferUsage.DYNAMIC_DRAW) ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
-		__indexType = gl.UNSIGNED_SHORT;
+		__indexType = gl.UNSIGNED_SHORT; // uint16
 	}
 
 	/**
@@ -92,8 +92,7 @@ import openfl.Vector;
 	/**
 		Store in the graphics subsystem vertex indices.
 
-		@param	data	an ArrayBufferView containing index data. Each index is represented by
-		16-bits (two bytes) in the array.
+		@param	data	an ArrayBufferView containing index data.
 		@param	byteLength	The number of bytes to read.
 	**/
 	public function uploadFromTypedArray(data:ArrayBufferView, byteLength:Int = -1):Void
@@ -102,18 +101,19 @@ import openfl.Vector;
 		var gl = __context.gl;
 		__context.__bindGLElementArrayBuffer(__id);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);
-		__indexType = gl.UNSIGNED_SHORT;
-		__bytesPerElement = 2;
-	}
 
-	public function uploadFromUInt32Array(data:UInt32Array, byteLength:Int = -1):Void
-	{
-		if (data == null) return;
-		var gl = __context.gl;
-		__context.__bindGLElementArrayBuffer(__id);
-		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);
-		__indexType = gl.UNSIGNED_INT;
-		__bytesPerElement = 4;
+		switch (data.type)
+		{
+			case lime.utils.ArrayBufferView.TypedArrayType.Uint32:
+				__indexType = gl.UNSIGNED_INT;
+				__bytesPerElement = 4;
+			case lime.utils.ArrayBufferView.TypedArrayType.Uint8:
+				__indexType = gl.UNSIGNED_BYTE;
+				__bytesPerElement = 1;
+			default:
+				__indexType = gl.UNSIGNED_SHORT;
+				__bytesPerElement = 2;
+		}
 	}
 
 	/**

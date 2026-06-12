@@ -694,6 +694,7 @@ class DisplayObjectRenderer extends EventDispatcher
 							{
 								childRenderer.__setRenderTarget(bitmap3);
 								childRenderer.__renderFilterPass(bitmap, childRenderer.__defaultDisplayShader, filter.__smooth);
+								if (renderer.__type == OPENGL) cast(renderer, OpenGLRenderer).__incrementGLDrawCalls(bitmap);
 							}
 
 							for (i in 0...filter.__numShaderPasses)
@@ -702,6 +703,7 @@ class DisplayObjectRenderer extends EventDispatcher
 								childRenderer.__setBlendMode(filter.__shaderBlendMode);
 								childRenderer.__setRenderTarget(bitmap2);
 								childRenderer.__renderFilterPass(bitmap, shader, filter.__smooth);
+								if (renderer.__type == OPENGL) cast(renderer, OpenGLRenderer).__incrementGLDrawCalls(bitmap);
 
 								cacheBitmap = bitmap;
 								bitmap = bitmap2;
