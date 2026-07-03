@@ -56,10 +56,11 @@ class TextureBase extends EventDispatcher
 	@:noCompletion private var __textureID:GLTexture;
 	@:noCompletion private var __textureTarget:Int;
 	@:noCompletion private var __width:Int;
-	@:noCompletion private var __msaaFbo:GLFramebuffer;
-	@:noCompletion private var __msaaSamples:Int;
-	@:noCompletion private var __msaaColor:GLRenderbuffer;
-	@:noCompletion private var __msaaDepth:GLRenderbuffer;
+
+	// @:noCompletion private var __msaaFbo:GLFramebuffer;
+	// @:noCompletion private var __msaaSamples:Int;
+	// @:noCompletion private var __msaaColor:GLRenderbuffer;
+	// @:noCompletion private var __msaaDepth:GLRenderbuffer;
 
 	@:noCompletion private function new(context:Context3D)
 	{
@@ -189,22 +190,22 @@ class TextureBase extends EventDispatcher
 
 	@:noCompletion private function __disposeMSAA():Void
 	{
-		var gl = __context.gl;
-		if (__msaaFbo != null)
-		{
-			gl.deleteFramebuffer(__msaaFbo);
-			__msaaFbo = null;
-		}
-		if (__msaaColor != null)
-		{
-			gl.deleteRenderbuffer(__msaaColor);
-			__msaaColor = null;
-		}
-		if (__msaaDepth != null)
-		{
-			gl.deleteRenderbuffer(__msaaDepth);
-			__msaaDepth = null;
-		}
+		// var gl = __context.gl;
+		// if (__msaaFbo != null)
+		// {
+		// 	gl.deleteFramebuffer(__msaaFbo);
+		// 	__msaaFbo = null;
+		// }
+		// if (__msaaColor != null)
+		// {
+		// 	gl.deleteRenderbuffer(__msaaColor);
+		// 	__msaaColor = null;
+		// }
+		// if (__msaaDepth != null)
+		// {
+		// 	gl.deleteRenderbuffer(__msaaDepth);
+		// 	__msaaDepth = null;
+		// }
 	}
 
 	@SuppressWarnings("checkstyle:Dynamic")
@@ -212,68 +213,66 @@ class TextureBase extends EventDispatcher
 	{
 		var gl = __context.gl;
 
-		#if !(js && html5)
-		if (antiAlias > 0)
-		{
-			// create MSAA framebuffer once
-			if (__msaaFbo == null || __msaaSamples != antiAlias)
-			{
-				__disposeMSAA();
+		// if (antiAlias > 0)
+		// {
+		// 	// create MSAA framebuffer once
+		// 	if (__msaaFbo == null || __msaaSamples != antiAlias)
+		// 	{
+		// 		__disposeMSAA();
 
-				__msaaSamples = antiAlias;
+		// 		__msaaSamples = antiAlias;
 
-				__msaaFbo = gl.createFramebuffer();
-				__context.__bindGLFramebuffer(__msaaFbo);
+		// 		__msaaFbo = gl.createFramebuffer();
+		// 		__context.__bindGLFramebuffer(__msaaFbo);
 
-				// -------------------------
-				// COLOR (multisampled)
-				// -------------------------
-				__msaaColor = gl.createRenderbuffer();
-				gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaColor);
+		// 		// -------------------------
+		// 		// COLOR (multisampled)
+		// 		// -------------------------
+		// 		__msaaColor = gl.createRenderbuffer();
+		// 		gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaColor);
 
-				untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, gl.RGBA8, __width, __height);
+		// 		untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, gl.RGBA8, __width, __height);
 
-				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, __msaaColor);
+		// 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, __msaaColor);
 
-				// -------------------------
-				// DEPTH / STENCIL
-				// -------------------------
-				if (enableDepthAndStencil)
-				{
-					__msaaDepth = gl.createRenderbuffer();
-					gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaDepth);
+		// 		// -------------------------
+		// 		// DEPTH / STENCIL
+		// 		// -------------------------
+		// 		if (enableDepthAndStencil)
+		// 		{
+		// 			__msaaDepth = gl.createRenderbuffer();
+		// 			gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaDepth);
 
-					var depthFormat = (Context3D.__glDepthStencil != 0) ? Context3D.__glDepthStencil : gl.DEPTH_COMPONENT16;
+		// 			var depthFormat = (Context3D.__glDepthStencil != 0) ? Context3D.__glDepthStencil : gl.DEPTH_COMPONENT16;
 
-					untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, depthFormat, __width, __height);
+		// 			untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, depthFormat, __width, __height);
 
-					if (Context3D.__glDepthStencil != 0)
-					{
-						gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
-					}
-					else
-					{
-						gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
-					}
-				}
+		// 			if (Context3D.__glDepthStencil != 0)
+		// 			{
+		// 				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
+		// 			}
+		// 			else
+		// 			{
+		// 				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
+		// 			}
+		// 		}
 
-				// error check
-				if (__context.__enableErrorChecking)
-				{
-					var code = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+		// 		// error check
+		// 		if (__context.__enableErrorChecking)
+		// 		{
+		// 			var code = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 
-					if (code != gl.FRAMEBUFFER_COMPLETE)
-					{
-						Log.warn('MSAA FBO error: ${code} width:${__width} height:${__height}');
-					}
-				}
+		// 			if (code != gl.FRAMEBUFFER_COMPLETE)
+		// 			{
+		// 				Log.warn('MSAA FBO error: ${code} width:${__width} height:${__height}');
+		// 			}
+		// 		}
 
-				gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-			}
+		// 		gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+		// 	}
 
-			return __msaaFbo;
-		}
-		#end
+		// 	return __msaaFbo;
+		// }
 
 		if (__glFramebuffer == null)
 		{

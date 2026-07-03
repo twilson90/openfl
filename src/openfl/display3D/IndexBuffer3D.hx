@@ -98,7 +98,11 @@ import openfl.Vector;
 	public function uploadFromTypedArray(data:ArrayBufferView, byteLength:Int = -1):Void
 	{
 		if (data == null) return;
-		if (byteLength != -1 && byteLength < data.length) data = data.subarray(0, byteLength);
+		var len:Int = #if js untyped data.length #else data.length #end;
+		if (byteLength != -1 && byteLength < len)
+		{
+			data = #if js untyped data.subarray(0, byteLength) #else data.subarray(0, byteLength) #end;
+		}
 		var gl = __context.gl;
 		__context.__bindGLElementArrayBuffer(__id);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);

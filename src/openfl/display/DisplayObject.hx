@@ -1495,6 +1495,11 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		}
 
 		__cleanUpCacheBitmap();
+
+		if (Lib.current.stage.__focus == this)
+		{
+			Lib.current.stage.__focus = null;
+		}
 	}
 
 	@:noCompletion private function __cleanUpCacheBitmap()
