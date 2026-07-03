@@ -17,7 +17,9 @@ import openfl.utils.ColorUtil;
 import openfl.utils.ObjectPool;
 import openfl.utils._internal.ArrayBufferView;
 import openfl.utils._internal.Float32Array;
+import openfl.utils._internal.UInt32Array;
 import openfl.utils._internal.IndexArray;
+import lime.utils.ArrayBuffer;
 
 @:access(lime.utils.ArrayBufferView)
 @:access(openfl.geom.Rectangle)
@@ -71,6 +73,9 @@ class Context3DGraphicsBatchBuffer
 	public var lineThickness(default, null):Vector<Float> = new Vector<Float>();
 	public var selfIntersecting(default, null):Vector<Bool> = new Vector<Bool>();
 
+	private static var __tempUInt32Buffer:UInt32Array;
+	private static var __tempFloat32Buffer:Float32Array;
+	private static var __tempArrayBuffer:ArrayBuffer;
 	private static var __tempColorTransform = new ColorTransform(1, 1, 1, 1, 0, 0, 0, 0);
 	private static var __tempVerticesVector:Vector<Float> = new Vector<Float>();
 	private static var __tempIndicesVector:Vector<Int> = new Vector<Int>();
@@ -79,6 +84,13 @@ class Context3DGraphicsBatchBuffer
 	private static var __tempScale9VerticesVector:Vector<Float> = new Vector<Float>();
 	private static var __wireframeKeyIntMap:Map<Int, Bool> = new Map<Int, Bool>();
 	private static var __wireframeKeyStringMap:Map<String, Bool> = new Map<String, Bool>();
+
+	@:noCompletion private static function __init__()
+	{
+		__tempArrayBuffer = new ArrayBuffer(4);
+		__tempUInt32Buffer = new UInt32Array(__tempArrayBuffer);
+		__tempFloat32Buffer = new Float32Array(__tempArrayBuffer);
+	}
 
 	public function dispose():Void
 	{
@@ -231,6 +243,7 @@ class Context3DGraphicsBatchBuffer
 		if (numVertices > 0)
 		{
 			__triVertexData = __resizeVertexBuffer(__triVertexData, __triVertexPosition + (numVertices * DATA_PER_VERTEX));
+
 			for (i in 0...numVertices)
 			{
 				vertOffset = i * 2;
@@ -262,19 +275,20 @@ class Context3DGraphicsBatchBuffer
 
 		if (numIndices > 0)
 		{
-			var indexOffset = Std.int(__triVertexPosition / DATA_PER_VERTEX);
-			__triIndexData = __resizeIndexBuffer(__triIndexData, __triIndexPosition + numIndices, __triVertexPosition + numVertices);
+			var base = Std.int(__triVertexPosition / DATA_PER_VERTEX);
+			__triIndexData = __resizeIndexBuffer(__triIndexData, __triIndexPosition + numIndices, base + numVertices);
+
 			for (i in 0...numIndices)
 			{
-				__triIndexData[__triIndexPosition + i] = indexOffset + indices[i];
+				__triIndexData[__triIndexPosition + i] = base + indices[i];
 			}
 		}
 
 		if (isLine)
 		{
 			var numLineIndices = numLines * 2;
-
 			__lineVertexData = __resizeVertexBuffer(__lineVertexData, __lineVertexPosition + (numPoints * DATA_PER_VERTEX));
+
 			for (i in 0...numPoints)
 			{
 				offset = __lineVertexPosition + (i * DATA_PER_VERTEX);
@@ -308,6 +322,8 @@ class Context3DGraphicsBatchBuffer
 		__triVertexPosition += numVertices * DATA_PER_VERTEX;
 		__triIndexPosition += numIndices;
 
+		__dirty = true;
+
 		// merge with previous batch if possible
 		var batchable = (selfIntersecting || isLine) ? false : isBatchable(fill, triCulling);
 		if (batchable)
@@ -334,7 +350,6 @@ class Context3DGraphicsBatchBuffer
 		this.selfIntersecting.push(selfIntersecting);
 
 		length++;
-		__dirty = true;
 	}
 
 	static private function calculateBounds(points:Vector<Float>, bounds:Rectangle, stride:Int = 2)
@@ -381,6 +396,8 @@ class Context3DGraphicsBatchBuffer
 
 		if (__dirty)
 		{
+			__wireframeDirty = true;
+
 			if (__triIndexPosition > 0) triIndexBuffer = __prepareIndexBuffer(triIndexBuffer, __triIndexData, __triIndexPosition);
 
 			if (__triVertexPosition > 0) triVertexBuffer = __prepareVertexBuffer(triVertexBuffer, __triVertexData, __triVertexPosition);
@@ -390,7 +407,7 @@ class Context3DGraphicsBatchBuffer
 			if (__lineVertexPosition > 0) lineVertexBuffer = __prepareVertexBuffer(lineVertexBuffer, __lineVertexData, __lineVertexPosition);
 		}
 
-		if (__wireframeDirty || __dirty)
+		if (__wireframeDirty)
 		{
 			if (__triIndexPosition > 0 && __graphics.__wireframe) __prepareWireFrameBuffer();
 		}
@@ -402,8 +419,8 @@ class Context3DGraphicsBatchBuffer
 
 	public function debug_print()
 	{
-		trace("Indices (" + __triIndexData.length + "):" + [for (i in __triIndexData) i]);
-		trace("Vertices (" + __triVertexData.length + "):" + [for (v in __triVertexData) v]);
+		trace("Indices (" + __triIndexData.length + "):", [for (i in 0...__triIndexData.length) __triIndexData[i]]);
+		trace("Vertices (" + __triVertexData.length + "):", [for (i in 0...__triVertexData.length) __triVertexData[i]]);
 	}
 
 	public function hitTest(px:Float, py:Float)
@@ -442,13 +459,10 @@ class Context3DGraphicsBatchBuffer
 		return false;
 	}
 
-	private inline function __setVertexColor(data:ArrayBufferView, offset:Int, a:Int, r:Int, g:Int, b:Int)
+	private inline function __setVertexColor(data:Float32Array, offset:Int, a:Int, r:Int, g:Int, b:Int)
 	{
-		var o = offset * 4;
-		data.buffer.set(o, b);
-		data.buffer.set(o + 1, g);
-		data.buffer.set(o + 2, r);
-		data.buffer.set(o + 3, a);
+		__tempUInt32Buffer[0] = (a << 24) | (r << 16) | (g << 8) | b;
+		data[offset] = __tempFloat32Buffer[0];
 	}
 
 	private function __resizeVertexBuffer(buffer:Float32Array, length:Int)
@@ -471,17 +485,27 @@ class Context3DGraphicsBatchBuffer
 	private function __resizeIndexBuffer(buffer:IndexArray, length:Int, numVertices:Int)
 	{
 		var newBuffer = buffer;
+		var bytesPerElement = __getBytesPerElement(numVertices);
 		#if lime
 		if (buffer == null)
 		{
-			newBuffer = new IndexArray(length, numVertices);
+			newBuffer = new IndexArray(length, bytesPerElement);
 		}
-		else if (length > buffer.length)
+		else
 		{
-			newBuffer.resize(__nextPow2(length), numVertices);
+			newBuffer = newBuffer.resize(__nextPow2(length), bytesPerElement);
 		}
 		#end
 		return newBuffer;
+	}
+
+	private static inline function __getBytesPerElement(numVertices:Int)
+	{
+		var maxIndex = numVertices - 1;
+		if (maxIndex > 4294967295) throw 'Index array value out of range';
+		if (maxIndex > 65535) return 4;
+		if (maxIndex > 255) return 2;
+		return 1;
 	}
 
 	public function __prepareWireFrameBuffer()
@@ -489,7 +513,8 @@ class Context3DGraphicsBatchBuffer
 		var numTriIndices = __triIndexPosition;
 		var numTris = Std.int(numTriIndices / 3);
 		var numTriVertices = Std.int(__triVertexPosition / DATA_PER_VERTEX);
-		var indexData = new IndexArray(numTris * 6, numTriVertices); // a lot more than we need but the lowest predictable limit without iterating.
+		var indexData = new IndexArray(numTris * 6,
+			__getBytesPerElement(numTriVertices)); // a lot more than we need but the lowest predictable limit without iterating.
 		var useIntKeys = numTriVertices < 65536;
 		var wireframeIndex = 0;
 		var map:IMap<Dynamic, Bool> = useIntKeys ? __wireframeKeyIntMap : __wireframeKeyStringMap;
@@ -545,7 +570,7 @@ class Context3DGraphicsBatchBuffer
 	private function __prepareMaskQuadBuffer()
 	{
 		var numVertices = length * 4;
-		var indexData = new IndexArray(length * 6, numVertices);
+		var indexData = new IndexArray(length * 6, __getBytesPerElement(numVertices));
 		var vertexData = new Float32Array(numVertices * DATA_PER_VERTEX);
 		var vertexOffset = 0;
 		var indexOffset = 0;
@@ -618,18 +643,19 @@ class Context3DGraphicsBatchBuffer
 			if (buffer != null) buffer.dispose();
 			buffer = __context.createIndexBuffer(length, DYNAMIC_DRAW);
 		}
-		buffer.uploadFromTypedArray(data.data.subarray(0, length));
+		var _data = data.data;
+		buffer.uploadFromTypedArray(_data, length);
 		return buffer;
 	}
 
-	private function __prepareVertexBuffer(buffer:VertexBuffer3D, data:ArrayBufferView, length:Int):VertexBuffer3D
+	private function __prepareVertexBuffer(buffer:VertexBuffer3D, data:Float32Array, length:Int):VertexBuffer3D
 	{
 		if (buffer == null || length > buffer.__numVertices)
 		{
 			if (buffer != null) buffer.dispose();
 			buffer = __context.createVertexBuffer(Std.int(length / DATA_PER_VERTEX), DATA_PER_VERTEX, DYNAMIC_DRAW);
 		}
-		buffer.uploadFromTypedArray(data.subarray(0, length));
+		buffer.uploadFromTypedArray(data, length);
 		return buffer;
 	}
 
@@ -795,8 +821,7 @@ class Renderer
 				if (buffer.maskQuadIndexBuffer == null) buffer.__prepareMaskQuadBuffer();
 			}
 
-			draw();
-
+			__render();
 			renderer.__clearShader();
 
 			triIndex += numTris * 3;
@@ -819,15 +844,23 @@ class Renderer
 
 	private static inline function calculateIsMasked(i:Int):Bool
 	{
+		#if openfl_disable_gl_line_masked_rendering
+		return false;
+		#else
 		return buffer.selfIntersecting[i] && (buffer.fill[i].hasTransparency || worldAlpha < 1.0) && !graphics.__wireframe;
+		#end
 	}
 
 	private static inline function calculateIsLine(i:Int):Bool
 	{
 		#if openfl_disable_gl_hairlines
 		return false;
+		#elseif openfl_disable_gl_auto_hairlines
+		return buffer.numLines[i] > 0 && buffer.lineThickness[i] == 0.0;
 		#else
-		return buffer.numLines[i] > 0 && (buffer.lineThickness[i] * graphics.__owner.__worldScale) < 1.0;
+		return buffer.numLines[i] > 0
+			&& (buffer.lineThickness[i] * Math.min(graphics.__worldScaleX,
+				graphics.__worldScaleY)) < #if (openfl_gl_hairline_thickness && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_hairline_thickness")) #else 1.0 #end;
 		#end
 	}
 
@@ -842,7 +875,7 @@ class Renderer
 		context.setCulling(culling);
 	}
 
-	private static inline function draw():Void
+	private static inline function __render():Void
 	{
 		// var matrix = isLine ? adjustedRenderMatrixArray : renderMatrixArray;
 		var matrix = renderMatrixArray;
@@ -967,27 +1000,30 @@ class Renderer
 
 	private static inline function drawElements(shader:Shader, isMaskQuad:Bool = false):Void
 	{
-		if (isMaskQuad && !masking)
+		if (isMaskQuad && !masking && buffer.maskQuadVertexBuffer != null)
 		{
 			setVertexBuffer(shader, buffer.maskQuadVertexBuffer);
 			context.drawTriangles(buffer.maskQuadIndexBuffer, maskQuadIndex, numMaskQuads * 2);
+			renderer.__incrementGLDrawCalls(graphics.__owner);
 		}
-		else if (isLine && !masking)
+		else if (isLine && !masking && buffer.lineVertexBuffer != null)
 		{
 			setVertexBuffer(shader, buffer.lineVertexBuffer);
 			context.drawLines(buffer.lineIndexBuffer, lineIndex, numLines);
+			renderer.__incrementGLDrawCalls(graphics.__owner);
 		}
-		else if (graphics.__wireframe && !masking)
+		else if (graphics.__wireframe && !masking && buffer.triVertexBuffer != null)
 		{
 			setVertexBuffer(shader, buffer.triVertexBuffer);
 			context.drawLines(buffer.wireframeIndexBuffer, wireIndex, numWires);
+			renderer.__incrementGLDrawCalls(graphics.__owner);
 		}
-		else
+		else if (buffer.triVertexBuffer != null)
 		{
 			setVertexBuffer(shader, buffer.triVertexBuffer);
 			context.drawTriangles(buffer.triIndexBuffer, triIndex, numTris);
+			renderer.__incrementGLDrawCalls(graphics.__owner);
 		}
-		renderer.__incrementGLDrawCalls(graphics.__owner);
 	}
 
 	private static inline function setVertexBuffer(shader:Shader, vertexBuffer:VertexBuffer3D):Void

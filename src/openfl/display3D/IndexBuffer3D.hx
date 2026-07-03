@@ -98,10 +98,25 @@ import openfl.Vector;
 	public function uploadFromTypedArray(data:ArrayBufferView, byteLength:Int = -1):Void
 	{
 		if (data == null) return;
+		if (byteLength != -1 && byteLength < data.length) data = data.subarray(0, byteLength);
 		var gl = __context.gl;
 		__context.__bindGLElementArrayBuffer(__id);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, __usage);
 
+		#if js
+		switch (untyped data.BYTES_PER_ELEMENT)
+		{
+			case 4:
+				__indexType = gl.UNSIGNED_INT;
+				__bytesPerElement = 4;
+			case 1:
+				__indexType = gl.UNSIGNED_BYTE;
+				__bytesPerElement = 1;
+			default:
+				__indexType = gl.UNSIGNED_SHORT;
+				__bytesPerElement = 2;
+		}
+		#else
 		switch (data.type)
 		{
 			case lime.utils.ArrayBufferView.TypedArrayType.Uint32:
@@ -114,6 +129,7 @@ import openfl.Vector;
 				__indexType = gl.UNSIGNED_SHORT;
 				__bytesPerElement = 2;
 		}
+		#end
 	}
 
 	/**

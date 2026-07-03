@@ -1280,7 +1280,7 @@ class OpenGLRenderer extends DisplayObjectRenderer
 
 		map.clear();
 		var buffer = __context3D.createIndexBuffer(wireframeIndex, DYNAMIC_DRAW);
-		buffer.uploadFromTypedArray(indexData.data.subarray(0, wireframeIndex));
+		buffer.uploadFromTypedArray(cast indexData.data, wireframeIndex);
 		return buffer;
 	}
 

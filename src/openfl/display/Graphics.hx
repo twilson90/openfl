@@ -83,8 +83,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __transformDirty:Bool;
 	@:noCompletion private var __usedShaderBuffers:List<ShaderBuffer>;
 	@:noCompletion private var __buffer:Context3DGraphicsBatchBuffer;
-	@:noCompletion private var __wireframe:Bool = #if openfl_gl_wireframe true #else false #end;
-	@:noCompletion private var __invalidateVertexBufferOnTransform:Bool;
+	@:noCompletion private var __wireframe:Bool = #if openfl_enable_gl_wireframe true #else false #end;
 	@:noCompletion private var __visible:Bool;
 	@:noCompletion private var __isHardwareDrawable:Bool;
 	@:noCompletion private var __isHardwareCompatible(get, never):Bool;
@@ -93,6 +92,9 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __owner:DisplayObject;
 	@:noCompletion private var __width:Int;
 	@:noCompletion private var __worldTransform:Matrix;
+	@:noCompletion private var __oldWorldTransform:Matrix;
+	@:noCompletion private var __worldScaleX:Float;
+	@:noCompletion private var __worldScaleY:Float;
 	#if (js && html5)
 	@:noCompletion private var __canvas:CanvasElement;
 	@:noCompletion private var __context:#if lime CanvasRenderingContext2D #else Dynamic #end;
@@ -103,6 +105,9 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __bitmapScaleX:Float;
 	@:noCompletion private var __bitmapScaleY:Float;
 	@:noCompletion private var __useScale9Grid:Bool;
+	#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+	@:noCompletion private var __hasCurves:Bool;
+	#end
 
 	@:noCompletion private function new(owner:DisplayObject)
 	{
@@ -111,6 +116,7 @@ import js.html.CanvasRenderingContext2D;
 		__commands = new DrawCommandBuffer();
 		__renderTransform = new Matrix();
 		__worldTransform = new Matrix();
+		__oldWorldTransform = new Matrix();
 		__bounds = new Rectangle();
 		__boundsExStroke = new Rectangle();
 
@@ -119,6 +125,9 @@ import js.html.CanvasRenderingContext2D;
 
 		__bitmapScaleX = 1;
 		__bitmapScaleY = 1;
+
+		__worldScaleX = 1.0;
+		__worldScaleY = 1.0;
 
 		__isHardwareDrawable = true;
 	}
@@ -433,8 +442,9 @@ import js.html.CanvasRenderingContext2D;
 			__bounds.setEmpty();
 			__boundsExStroke.setEmpty();
 		}
-
-		__invalidateVertexBufferOnTransform = false;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = false;
+		#end
 		__visible = false;
 		__isHardwareDrawable = true;
 	}
@@ -453,6 +463,9 @@ import js.html.CanvasRenderingContext2D;
 		__transformDirty = true;
 		__visible = sourceGraphics.__visible;
 		__isHardwareDrawable = sourceGraphics.__isHardwareDrawable;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = sourceGraphics.__hasCurves;
+		#end
 	}
 
 	/**
@@ -499,8 +512,9 @@ import js.html.CanvasRenderingContext2D;
 	public function cubicCurveTo(controlX1:Float, controlY1:Float, controlX2:Float, controlY2:Float, anchorX:Float, anchorY:Float):Void
 	{
 		__commands.cubicCurveTo(controlX1, controlY1, controlX2, controlY2, anchorX, anchorY);
-
-		// __invalidateVertexBufferOnTransform = true;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = true;
+		#end
 		__dirty = true;
 		#if openfl_disable_hardware_path_rendering
 		__isHardwareDrawable = false;
@@ -544,8 +558,9 @@ import js.html.CanvasRenderingContext2D;
 	public function curveTo(controlX:Float, controlY:Float, anchorX:Float, anchorY:Float):Void
 	{
 		__commands.curveTo(controlX, controlY, anchorX, anchorY);
-
-		// __invalidateVertexBufferOnTransform = true;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = true;
+		#end
 		__dirty = true;
 
 		#if openfl_disable_hardware_path_rendering
@@ -562,8 +577,9 @@ import js.html.CanvasRenderingContext2D;
 		if (radius == 0) return;
 
 		__commands.drawCircle(x, y, radius);
-
-		// __invalidateVertexBufferOnTransform = true;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = true;
+		#end
 		__dirty = true;
 	}
 
@@ -590,8 +606,9 @@ import js.html.CanvasRenderingContext2D;
 		if (width == 0 || height == 0) return;
 
 		__commands.drawEllipse(x, y, width, height);
-
-		// __invalidateVertexBufferOnTransform = true;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = true;
+		#end
 		__dirty = true;
 	}
 
@@ -889,8 +906,9 @@ import js.html.CanvasRenderingContext2D;
 		if (width == 0 && height == 0) return;
 
 		__commands.drawRoundRect(x, y, width, height, ellipseWidth, ellipseHeight);
-
-		// __invalidateVertexBufferOnTransform = true;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		__hasCurves = true;
+		#end
 		__dirty = true;
 	}
 
@@ -1341,6 +1359,12 @@ import js.html.CanvasRenderingContext2D;
 		if (thickness != null)
 		{
 			__visible = true;
+			#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+			if (caps == ROUND || joints == ROUND)
+			{
+				__hasCurves = true;
+			}
+			#end
 
 			#if openfl_disable_hardware_path_rendering
 			__isHardwareDrawable = false;
@@ -1561,7 +1585,18 @@ import js.html.CanvasRenderingContext2D;
 		{
 			if (shapeFlag)
 			{
-				return Context3DGraphics.hitTest(this, px, py);
+				if (Lib.current.stage.context3D != null)
+				{
+					return Context3DGraphics.hitTest(this, px, py);
+				}
+				else
+				{
+					#if (js && html5)
+					return CanvasGraphics.hitTest(this, px, py);
+					#elseif (lime_cffi)
+					return CairoGraphics.hitTest(this, px, py);
+					#end
+				}
 			}
 
 			return true;
@@ -1868,6 +1903,31 @@ import js.html.CanvasRenderingContext2D;
 		#end
 		__width = newWidth;
 		__height = newHeight;
+
+		if (__oldWorldTransform.a != __owner.__worldTransform.a
+			|| __oldWorldTransform.b != __owner.__worldTransform.b
+			|| __oldWorldTransform.c != __owner.__worldTransform.c
+			|| __oldWorldTransform.d != __owner.__worldTransform.d)
+		{
+			var sx2 = __owner.__worldTransform.a * __owner.__worldTransform.a + __owner.__worldTransform.b * __owner.__worldTransform.b;
+			var sy2 = __owner.__worldTransform.c * __owner.__worldTransform.c + __owner.__worldTransform.d * __owner.__worldTransform.d;
+			__worldScaleX = Math.sqrt(sx2);
+			__worldScaleY = Math.sqrt(sy2);
+			#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+			if (__hasCurves)
+			{
+				__hardwareDirty = true;
+			}
+			#end
+		}
+		__oldWorldTransform.copyFrom(__owner.__worldTransform);
+	}
+
+	@:noCompletion private inline function __getMinScale(matrix:Matrix):Float
+	{
+		var sx2 = matrix.a * matrix.a + matrix.b * matrix.b;
+		var sy2 = matrix.c * matrix.c + matrix.d * matrix.d;
+		return Math.sqrt(Math.min(sx2, sy2));
 	}
 
 	@:noCompletion private function __calculateRenderOffset(result:Point):Void

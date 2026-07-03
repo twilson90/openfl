@@ -207,14 +207,19 @@ class Transform
 		// TODO: Move this to DisplayObject?
 		if (!__colorTransform.__equals(value, false))
 		{
-			__colorTransform.__copyFrom(value);
-
-			if (value != null)
+			if (value == null)
+			{
+				__colorTransform.__identity();
+			}
+			else
 			{
 				__displayObject.alpha = value.alphaMultiplier;
+				if (!__colorTransform.__equals(value, true))
+				{
+					__displayObject.__setParentRenderDirty();
+				}
+				__colorTransform.__copyFrom(value);
 			}
-
-			__displayObject.__setRenderDirty();
 		}
 
 		return __colorTransform;

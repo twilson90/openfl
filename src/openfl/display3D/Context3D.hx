@@ -1296,6 +1296,8 @@ import lime.math.Vector2;
 				clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
 			}
 
+			__resolveMSAA(__backBufferTexture);
+
 			var cacheBuffer = __backBufferTexture;
 			__backBufferTexture = __frontBufferTexture;
 			__frontBufferTexture = cacheBuffer;
@@ -1668,6 +1670,10 @@ import lime.math.Vector2;
 	**/
 	public function setRenderToBackBuffer():Void
 	{
+		if (__state.renderToTexture != null)
+		{
+			__resolveMSAA(__state.renderToTexture);
+		}
 		__state.renderToTexture = null;
 	}
 
@@ -1709,6 +1715,11 @@ import lime.math.Vector2;
 	**/
 	public function setRenderToTexture(texture:TextureBase, enableDepthAndStencil:Bool = false, antiAlias:Int = 0, surfaceSelector:Int = 0):Void
 	{
+		if (__state.renderToTexture != texture)
+		{
+			__resolveMSAA(__state.renderToTexture);
+		}
+
 		__state.renderToTexture = texture;
 		__state.renderToTextureDepthStencil = enableDepthAndStencil;
 		__state.renderToTextureAntiAlias = antiAlias;
@@ -2712,6 +2723,27 @@ import lime.math.Vector2;
 			}
 			__contextState.__enableGLStencilTest = enable;
 		}
+	}
+
+	@:noCompletion private function __resolveMSAA(texture:TextureBase):Void
+	{
+		#if !(js && html5)
+		if (texture != null && texture.__msaaFbo != null)
+		{
+			var resolveFbo = texture.__getGLFramebuffer(false, 0, 0);
+			var gl:lime.graphics.WebGL2RenderContext = cast this.gl;
+
+			gl.bindFramebuffer(gl.READ_FRAMEBUFFER, texture.__msaaFbo);
+			gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
+
+			gl.blitFramebuffer(0, 0, texture.__width, texture.__height, 0, 0, texture.__width, texture.__height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+
+			// There's probably a better place to put clear()?
+			clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
+
+			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		}
+		#end
 	}
 
 	// Get & Set Methods

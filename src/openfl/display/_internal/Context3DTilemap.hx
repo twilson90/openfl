@@ -13,7 +13,6 @@ import openfl.display3D.Context3D;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
-import openfl.text.BitmapTextField;
 import openfl.utils._internal.Float32Array;
 
 #if !openfl_debug

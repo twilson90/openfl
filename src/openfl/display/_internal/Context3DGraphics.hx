@@ -58,16 +58,18 @@ class Context3DGraphics
 	private static inline var KAPPA:Float = 0.552284749831; // 4*(√2-1)/3
 	private static inline var EPSILON:Float = 1e-6;
 
-	private static var blankBitmapData = new BitmapData(1, 1, true, 0xffffffff);
+	// private static var blankBitmapData = new BitmapData(1, 1, true, 0xffffffff);
 	private static var maskRender:Bool;
+	private static var ctx:DrawContext;
 
 	public static function buildBuffer(graphics:Graphics)
 	{
 		var data = DrawCommandReader.__pool.get();
 		data.reset(graphics.__commands);
 
-		var ctx = DrawContext.__pool.get();
-		ctx.graphics = graphics;
+		if (ctx == null) ctx = new DrawContext();
+
+		ctx.init(graphics);
 
 		if (graphics.__buffer == null) graphics.__buffer = new Context3DGraphicsBatchBuffer(graphics);
 		else
@@ -351,9 +353,8 @@ class Context3DGraphics
 		DrawCommandReader.__pool.release(data);
 
 		ctx.build();
-		DrawContext.__pool.release(ctx);
 
-		graphics.__hardwareDirty = false;
+		ctx.graphics = null;
 
 		return graphics.__buffer;
 	}
@@ -405,7 +406,11 @@ class Context3DGraphics
 
 			if (!bounds.isEmpty() && width >= 1 && height >= 1)
 			{
-				if (graphics.__hardwareDirty) buildBuffer(graphics);
+				if (graphics.__hardwareDirty)
+				{
+					buildBuffer(graphics);
+					graphics.__hardwareDirty = false;
+				}
 
 				graphics.__buffer.render(renderer, maskRender);
 			}
@@ -449,10 +454,12 @@ class Context3DGraphics
 @:access(openfl.geom.Point)
 @:access(openfl.geom.Matrix)
 @:access(openfl.display.Graphics)
+@:access(openfl.display.DisplayObject)
 @:access(openfl.display._internal.StrokeContext)
 @:access(openfl.display._internal.Context3DGraphics)
 @:access(openfl.display._internal.Contour)
-class DrawContext
+@:access(openfl.display.OpenGLRenderer)
+private class DrawContext
 {
 	public var graphics:Graphics;
 	public var position:Point = new Point();
@@ -460,26 +467,36 @@ class DrawContext
 	public var strokes:Array<StrokeContext> = [];
 	public var fill:FillContext;
 	public var stroke:StrokeContext;
-	public var curveTolerance:Float = 0.25;
 	public var windingRule:Context3DWindingRule = EVENODD;
+	public var curveTolerance:Float = 0.25;
 
-	private static var __emptyFloatVector:Vector<Float> = new Vector<Float>();
-	private static var __emptyIntVector:Vector<Int> = new Vector<Int>();
+	public static var current:DrawContext;
+
+	private static var __emptyFloatArray:Array<Float> = [];
+	private static var __emptyIntArray:Array<Int> = [];
 	private static var __tempVerticesVector:Vector<Float> = new Vector<Float>();
 	private static var __tempIndicesVector:Vector<Int> = new Vector<Int>();
 	private static var __tempUvtDataVector:Vector<Float> = new Vector<Float>();
 	private static var __tempFloatVector:Vector<Float> = new Vector<Float>();
 	private static var __tempIntVector:Vector<Int> = new Vector<Int>();
-	private static var __pool:ObjectPool<DrawContext> = new ObjectPool<DrawContext>(() -> new DrawContext(), (c) -> c.identity());
 
-	private static var __vertexCache:LRUCache<Array<Float>> = new LRUCache<Array<Float>>(1024);
-	private static var __indexCache:LRUCache<Array<Int>> = new LRUCache<Array<Int>>(1024);
-	private static var __overlappingCache:LRUCache<Bool> = new LRUCache<Bool>(1024);
+	#if openfl_enable_gl_graphics_cache
+	private static var __vertexCache:LRUCache<Array<Float>>;
+	private static var __indexCache:LRUCache<Array<Int>>;
+	private static var __overlappingCache:LRUCache<Bool>;
+	#end
 
-	public function new()
+	static private function __init__()
 	{
-		identity();
+		#if openfl_enable_gl_graphics_cache
+		var limit = #if (openfl_gl_graphics_cache_limit && !macro) Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_graphics_cache_limit")) #else 1024 #end;
+		__vertexCache = new LRUCache<Array<Float>>(limit);
+		__indexCache = new LRUCache<Array<Int>>(limit);
+		__overlappingCache = new LRUCache<Bool>(limit);
+		#end
 	}
+
+	public function new() {}
 
 	public function newFill()
 	{
@@ -495,9 +512,19 @@ class DrawContext
 		strokes.push(stroke);
 	}
 
-	public function identity()
+	public function init(graphics:Graphics)
 	{
-		graphics = null;
+		current = this;
+
+		this.graphics = graphics;
+
+		var curveTolerance = #if (openfl_gl_graphics_curve_tolerance && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_graphics_curve_tolerance")) #else 0.25 #end;
+		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		curveTolerance /= Math.min(graphics.__worldScaleX, graphics.__worldScaleY);
+		curveTolerance = Math.max(0.0025, curveTolerance);
+		#end
+		this.curveTolerance = curveTolerance;
+
 		fill = releaseArray(fills, FillContext.__pool, false);
 		stroke = releaseArray(strokes, StrokeContext.__pool, false);
 		position.setTo(0, 0);
@@ -572,15 +599,8 @@ class DrawContext
 			if (stroke.fill.color == 0 || stroke.thickness == null) continue;
 			for (contour in stroke.contours)
 			{
-				if (#if openfl_disable_gl_hairlines true #else stroke.thickness > 0.0 #end)
-				{
-					var overlapping = buildContour(stroke, contour, vertices, indices);
-					graphics.__buffer.append(vertices, indices, null, stroke.fill, NONE, contour.points, contour.closed, stroke.thickness, overlapping);
-				}
-				else
-				{
-					graphics.__buffer.append(null, null, null, stroke.fill, NONE, contour.points, contour.closed, stroke.thickness);
-				}
+				var overlapping = buildStrokeContour(stroke, contour, vertices, indices);
+				graphics.__buffer.append(vertices, indices, null, stroke.fill, NONE, contour.points, contour.closed, stroke.thickness, overlapping);
 			}
 		}
 
@@ -592,9 +612,10 @@ class DrawContext
 
 	inline function buildFill(fill:FillContext, vertices:Vector<Float>, indices:Vector<Int>)
 	{
-		#if !openfl_disable_gl_graphics_cache
+		#if openfl_enable_gl_graphics_cache
 		var hash = fill.hash;
 		hash += windingRule;
+		hash += curveTolerance;
 		if (__vertexCache.exists(hash))
 		{
 			untyped (vertices).__array = __vertexCache.get(hash);
@@ -618,43 +639,58 @@ class DrawContext
 		untyped (vertices).__array = fillTess.vertices;
 		untyped (indices).__array = fillTess.elements;
 
-		#if !openfl_disable_gl_graphics_cache
+		#if openfl_enable_gl_graphics_cache
 		__vertexCache.set(hash, fillTess.vertices);
 		__indexCache.set(hash, fillTess.elements);
 		#end
 	}
 
-	inline function buildContour(stroke:StrokeContext, contour:Contour, vertices:Vector<Float>, indices:Vector<Int>)
+	inline function buildStrokeContour(stroke:StrokeContext, contour:Contour, vertices:Vector<Float>, indices:Vector<Int>)
 	{
-		#if !openfl_disable_gl_graphics_cache
+		#if openfl_disable_gl_hairlines
+		var thickness = Math.max(#if (openfl_gl_hairline_thickness && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_hairline_thickness")) #else 1.0 #end,
+			stroke.thickness);
+		#else
+		var thickness = stroke.thickness;
+		#end
+		if (thickness == 0.0)
+		{
+			untyped vertices.__array = __emptyFloatArray;
+			untyped indices.__array = __emptyIntArray;
+			return false;
+		}
+
+		#if openfl_enable_gl_graphics_cache
 		var hash = contour.hash;
-		hash += stroke.thickness;
+		hash += thickness;
+		hash += curveTolerance;
 		hash += stroke.joints;
 		hash += stroke.caps;
 		hash += stroke.miterLimit;
 		hash += stroke.scaleMode;
 		if (__vertexCache.exists(hash))
 		{
-			untyped (vertices).__array = __vertexCache.get(hash);
-			untyped (indices).__array = __indexCache.get(hash);
+			untyped vertices.__array = __vertexCache.get(hash);
+			untyped indices.__array = __indexCache.get(hash);
 			return __overlappingCache.get(hash);
 		}
 		#end
 
-		var lineTess = new PolyLineTesselator(curveTolerance, false);
-		lineTess.tesselate(contour.points, contour.curves, contour.closed,
-			#if openfl_disable_gl_hairlines Math.max(1.0, stroke.thickness) #else stroke.thickness #end, stroke.joints, stroke.caps, stroke.miterLimit,
-			stroke.scaleMode);
-		untyped (vertices).__array = lineTess.vertices;
-		untyped (indices).__array = lineTess.indices;
+		var lineTess = new PolyLineTesselator(curveTolerance);
+		lineTess.tesselate(contour.points, contour.closed, thickness, stroke.joints, stroke.caps, stroke.miterLimit,
+			stroke.scaleMode); // #if openfl_disable_gl_hairlines Math.max(1.0, thickness) #else thickness #end
 
-		#if !openfl_disable_gl_graphics_cache
-		__vertexCache.set(hash, lineTess.vertices);
-		__indexCache.set(hash, lineTess.indices);
-		__overlappingCache.set(hash, lineTess.selfIntersecting);
+		untyped vertices.__array = lineTess.vertices;
+		untyped indices.__array = lineTess.indices;
+		var selfIntersecting = lineTess.selfIntersecting;
+
+		#if openfl_enable_gl_graphics_cache
+		__vertexCache.set(hash, untyped (vertices).__array);
+		__indexCache.set(hash, untyped (indices).__array);
+		__overlappingCache.set(hash, selfIntersecting);
 		#end
 
-		return lineTess.selfIntersecting;
+		return selfIntersecting;
 	}
 
 	function releaseArray<T>(arr:Array<T>, pool:ObjectPool<T>, keepLast:Bool)
@@ -1024,7 +1060,7 @@ class DrawContext
 
 @:access(openfl.display._internal.Contour)
 @:access(openfl.display._internal.Fill)
-class FillContext
+private class FillContext
 {
 	public var contours:Array<Contour> = [];
 	public var contour:Contour;
@@ -1055,7 +1091,7 @@ class FillContext
 	{
 		endContour();
 		contour = Contour.__pool.get();
-		contour.init(x, y);
+		contour.init(x, y, DrawContext.current.curveTolerance);
 	}
 
 	public function endContour()
@@ -1079,7 +1115,7 @@ class FillContext
 	}
 }
 
-class StrokeContext extends FillContext
+private class StrokeContext extends FillContext
 {
 	public var thickness:Null<Float>;
 	public var joints:JointStyle;

@@ -4,7 +4,7 @@ interface IIndexArray
 {
 	public var data(get, never):ArrayBufferView;
 	public var length(get, never):Int;
-	public var maxVertices(get, never):Int;
+	private var __bytesPerElement:Int;
 	public function set(i:Int, v:Int):Void;
 	public function get(i:Int):Int;
 }
@@ -13,8 +13,8 @@ class UInt8IndexArray implements IIndexArray
 {
 	public var length(get, never):Int;
 	public var data(get, never):ArrayBufferView;
-	public var maxVertices(get, never):Int;
 
+	private var __bytesPerElement:Int = 1;
 	private var __data:UInt8Array;
 
 	public function new(data:UInt8Array = null, initialSize:Int = 0)
@@ -24,17 +24,13 @@ class UInt8IndexArray implements IIndexArray
 
 	public inline function set(i:Int, v:Int):Void
 	{
+		#if debug if (v < 0 || v > 255) throw 'Index array value out of range'; #end
 		__data[i] = v;
 	}
 
 	public inline function get(i:Int):Int
 	{
 		return __data[i];
-	}
-
-	public inline function get_maxVertices()
-	{
-		return 255;
 	}
 
 	private inline function get_length()
@@ -52,8 +48,8 @@ class UInt16IndexArray implements IIndexArray
 {
 	public var length(get, never):Int;
 	public var data(get, never):ArrayBufferView;
-	public var maxVertices(get, never):Int;
 
+	private var __bytesPerElement:Int = 2;
 	private var __data:UInt16Array;
 
 	public function new(data:UInt16Array = null, initialSize:Int = 0)
@@ -63,17 +59,13 @@ class UInt16IndexArray implements IIndexArray
 
 	public inline function set(i:Int, v:Int):Void
 	{
+		#if debug if (v < 0 || v > 65535) throw 'Index array value out of range'; #end
 		__data[i] = v;
 	}
 
 	public inline function get(i:Int):Int
 	{
 		return __data[i];
-	}
-
-	public inline function get_maxVertices()
-	{
-		return 65535;
 	}
 
 	private inline function get_length()
@@ -91,8 +83,8 @@ class UInt32IndexArray implements IIndexArray
 {
 	public var length(get, never):Int;
 	public var data(get, never):ArrayBufferView;
-	public var maxVertices(get, never):Int;
 
+	private var __bytesPerElement:Int = 4;
 	private var __data:UInt32Array;
 
 	public function new(data:UInt32Array = null, initialSize:Int = 0)
@@ -102,17 +94,13 @@ class UInt32IndexArray implements IIndexArray
 
 	public inline function set(i:Int, v:Int):Void
 	{
+		#if debug if (v < 0 || v > 4294967295) throw 'Index array value out of range'; #end
 		__data[i] = v;
 	}
 
 	public inline function get(i:Int):Int
 	{
 		return __data[i];
-	}
-
-	public inline function get_maxVertices()
-	{
-		return 0x7fffffff;
 	}
 
 	private inline function get_length()
@@ -127,41 +115,40 @@ class UInt32IndexArray implements IIndexArray
 }
 
 @:forward
+@:access(openfl.utils._internal.IIndexArray)
 abstract IndexArray(IIndexArray) from IIndexArray to IIndexArray
 {
 	public var length(get, never):Int;
 
-	public inline function new(length:Int, maxVertices:Int)
+	public inline function new(length:Int, bytesPerElement:Int)
 	{
-		this = maxVertices > 65535 ? new UInt32IndexArray(null,
-			length) : maxVertices > 255 ? new UInt16IndexArray(null, length) : new UInt8IndexArray(null, length);
-	}
-
-	public inline function resize(length:Int, maxVertices:Int)
-	{
-		if (length < this.length) throw 'Index array length cannot be reduced';
-		var oldData = this.data;
-		var newBuffer = new IndexArray(length, maxVertices);
-		newBuffer.data.set(oldData);
-		this = newBuffer;
-	}
-
-	public static inline function from(data:ArrayBufferView):IndexArray
-	{
-		switch (data.type)
+		switch (bytesPerElement)
 		{
-			case lime.utils.ArrayBufferView.TypedArrayType.Uint32:
-				return new UInt32IndexArray(data);
-			case lime.utils.ArrayBufferView.TypedArrayType.Uint8:
-				return new UInt8IndexArray(data);
-			case lime.utils.ArrayBufferView.TypedArrayType.Uint16:
-				return new UInt16IndexArray(data);
+			case 1:
+				this = new UInt8IndexArray(length);
+			case 2:
+				this = new UInt16IndexArray(length);
+			case 4:
+				this = new UInt32IndexArray(length);
 			default:
-				throw 'Invalid index array type: ${data.type}';
+				throw 'Invalid bytes per element';
 		}
 	}
 
-	inline function get_length()
+	public inline function resize(length:Int, bytesPerElement:Int):IndexArray
+	{
+		var oldData = this;
+		var oldLength = this.length;
+		if (length > oldLength || bytesPerElement > this.__bytesPerElement)
+		{
+			var newBuffer = new IndexArray(length, bytesPerElement);
+			untyped newBuffer.data.set(oldData.data);
+			this = newBuffer;
+		}
+		return this;
+	}
+
+	inline function get_length():Int
 	{
 		return this.length;
 	}

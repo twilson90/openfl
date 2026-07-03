@@ -9,7 +9,6 @@ class Contour
 	public var segments:Vector<Segment> = new Vector<Segment>();
 	public var curveTolerance(get, set):Float;
 	public var points(get, never):Vector<Float>;
-	public var curves(get, never):Vector<Bool>;
 	public var length(get, never):Float;
 	public var bounds(get, never):Rectangle;
 	public var hash(get, never):FastHash;
@@ -17,7 +16,6 @@ class Contour
 
 	private var __curveTolerance:Float = 0.25;
 	private var __points:Vector<Float> = new Vector<Float>();
-	private var __curves:Vector<Bool> = new Vector<Bool>();
 	private var __pointsDirty:Bool = false;
 	private var __lengthDirty:Bool = false;
 	private var __boundsDirty:Bool = false;
@@ -39,12 +37,6 @@ class Contour
 		return __points;
 	}
 
-	private function get_curves()
-	{
-		evaluatePoints();
-		return __curves;
-	}
-
 	private function get_length():Float
 	{
 		evaluateLength();
@@ -57,7 +49,7 @@ class Contour
 		return __bounds;
 	}
 
-	private function get_curveTolerance():Float
+	private inline function get_curveTolerance():Float
 	{
 		return __curveTolerance;
 	}
@@ -115,14 +107,14 @@ class Contour
 		init(0, 0);
 	}
 
-	public inline function init(x:Float, y:Float)
+	public inline function init(x:Float, y:Float, curveTolerance:Float = 0.25)
 	{
-		curveTolerance = 0.25;
 		segments.length = 0;
 		__startX = x;
 		__startY = y;
 		__currentX = x;
 		__currentY = y;
+		__curveTolerance = curveTolerance;
 		__setDirty();
 	}
 
@@ -183,27 +175,12 @@ class Contour
 	{
 		if (!__pointsDirty) return;
 		__points.length = 0;
-		__curves.length = 0;
 		__points.push(__startX);
 		__points.push(__startY);
-		__curves.push(false);
-		var n1 = 1;
 		for (seg in segments)
 		{
 			segmentPoints(seg, __curveTolerance, __points);
-			var n2 = Std.int(__points.length / 2);
-			for (i in n1...(n2 - 1))
-			{
-				__curves.push(true);
-			}
-			__curves.push(false);
-			n1 = n2;
 		}
-		// if (closed && __points[__points.length - 2] == __startX && __points[__points.length - 1] == __startY)
-		// {
-		// 	__points.length -= 2;
-		// 	__curves.length -= 1;
-		// }
 		__pointsDirty = false;
 	}
 

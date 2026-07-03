@@ -152,10 +152,11 @@ import openfl.display3D.Context3D;
 		* `myMatrix[1][0]`: .3
 		* `myMatrix[1][1]`: .4
 	**/
-	public var value(get, set):Array<T>;
+	public var value:Array<T>;
 
+	// public var value(get, set):Array<T>;
 	@:noCompletion private var __shader:Shader;
-	@:noCompletion private var __value:Array<T>;
+	// @:noCompletion private var __value:Array<T>;
 	@:noCompletion private var __arrayLength:Int;
 	@:noCompletion private var __internal:Bool;
 	@:noCompletion private var __isBool:Bool;
@@ -597,20 +598,19 @@ import openfl.display3D.Context3D;
 		return this.name = value;
 	}
 
-	@:noCompletion private function set_value(value:Array<T>):Array<T>
-	{
-		if (this.__value != value)
-		{
-			this.__value = value;
-			if (this.__shader != null) this.__shader.__dirtyGL = true;
-		}
-		return value;
-	}
-
-	@:noCompletion private function get_value():Array<T>
-	{
-		return this.__value;
-	}
+	// @:noCompletion private function set_value(value:Array<T>):Array<T>
+	// {
+	// 	if (this.__value != value)
+	// 	{
+	// 		this.__value = value;
+	// 		if (this.__shader != null) this.__shader.__dirtyGL = true;
+	// 	}
+	// 	return value;
+	// }
+	// @:noCompletion private function get_value():Array<T>
+	// {
+	// 	return this.__value;
+	// }
 }
 #else
 typedef ShaderParameter<T> = flash.display.ShaderParameter<T>;

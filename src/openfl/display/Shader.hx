@@ -211,7 +211,7 @@ class Shader
 	**/
 	public var program:Program3D;
 
-	@:noCompletion private var __dirtyGL:Bool;
+	// @:noCompletion private var __dirtyGL:Bool;
 	@:noCompletion private var __alpha:ShaderParameter<Float>;
 	@:noCompletion private var __bitmap:ShaderInput<BitmapData>;
 	@:noCompletion private var __colorMultiplier:ShaderParameter<Float>;

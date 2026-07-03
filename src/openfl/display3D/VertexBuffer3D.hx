@@ -49,6 +49,7 @@ import openfl.Vector;
 #end
 @:access(openfl.display3D.Context3D)
 @:access(openfl.display.Stage)
+@:access(lime.utils.ArrayBufferView)
 class VertexBuffer3D
 {
 	@:noCompletion private var __context:Context3D;
@@ -126,6 +127,7 @@ class VertexBuffer3D
 	public function uploadFromTypedArray(data:ArrayBufferView, byteLength:Int = -1):Void
 	{
 		if (data == null) return;
+		if (byteLength != -1 && byteLength < data.length) data = data.subarray(0, byteLength);
 		var gl = __context.gl;
 
 		__context.__bindGLArrayBuffer(__id);

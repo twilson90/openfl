@@ -3190,7 +3190,15 @@ class BitmapData implements IBitmapDrawable
 		var cacheRTTAntiAlias = context.__state.renderToTextureAntiAlias;
 		var cacheRTTSurfaceSelector = context.__state.renderToTextureSurfaceSelector;
 
-		context.setRenderToTexture(getTexture(context), true);
+		var texture = getTexture(context);
+		#if openfl_disable_gl_cached_bitmap_antialiasing
+		var antialiasing = 0;
+		#elseif (openfl_gl_cached_bitmap_antialiasing && !macro)
+		var antialiasing = Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_cached_bitmap_antialiasing"));
+		#else
+		var antialiasing:Int = __textureContext.attributes.antialiasing != null ? __textureContext.attributes.antialiasing : 0;
+		#end
+		context.setRenderToTexture(texture, true, antialiasing);
 
 		renderer.__render(source);
 

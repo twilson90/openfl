@@ -183,10 +183,7 @@ import js.html.CSSStyleDeclaration;
 #end
 @:access(lime.graphics.Image)
 @:access(lime.graphics.ImageBuffer)
-@:access(openfl.display3D._internal.Context3DState)
-@:access(openfl.display._internal.Context3DGraphics)
 @:access(openfl.events.Event)
-@:access(openfl.display3D.Context3D)
 @:access(openfl.display.Bitmap)
 @:access(openfl.display.BitmapData)
 @:access(openfl.display.DisplayObjectContainer)
@@ -974,6 +971,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __cacheBitmapData2:BitmapData;
 	@:noCompletion private var __cacheBitmapData3:BitmapData;
 	@:noCompletion private var __cacheBitmapMatrix:Matrix;
+	@:noCompletion private var __cacheBitmapScale:Float;
 	@:noCompletion private var __cacheBitmapRenderer:DisplayObjectRenderer;
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __cairo:#if lime Cairo #else Dynamic #end;
 	@:noCompletion private var __children:Array<DisplayObject>;
@@ -1022,13 +1020,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __worldVisible:Bool;
 	@:noCompletion private var __worldVisibleChanged:Bool;
 	@:noCompletion private var __worldTransformInvalid:Bool;
-	@:noCompletion private var __worldScale(get, never):Float;
 	@:noCompletion private var __worldZ:Int;
-	@:noCompletion private var __localBounds:Rectangle;
-	@:noCompletion private var __localBoundsDirty:Bool;
 	@:noCompletion private var __alphaMaskFilter:AlphaMaskFilter;
 	@:noCompletion private var __hasAlphaMask:Bool;
-	@:noCompletion private var ___worldScale:Null<Float>;
 
 	#if (js && html5)
 	@:noCompletion private var __canvas:CanvasElement;
@@ -1148,7 +1142,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		__cacheAsBitmap = false;
 		__transform = new Matrix();
 		__visible = true;
-		__localBounds = new Rectangle();
 
 		__rotation = 0;
 		__rotationSine = 0;
@@ -1162,6 +1155,8 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		__worldColorTransform = new ColorTransform();
 		__renderTransform = new Matrix();
 		__worldVisible = true;
+
+		__cacheBitmapScale = 1.0;
 
 		name = "instance" + (++__instanceCount);
 
@@ -1675,15 +1670,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 	@:noCompletion private function __getLocalBounds(rect:Rectangle):Void
 	{
-		if (__localBoundsDirty)
-		{
-			__localBoundsDirty = false;
-			__localBounds.setEmpty();
-			__getBounds(__localBounds, __transform);
-			rect.x -= __transform.tx;
-			rect.y -= __transform.ty;
-		}
-		rect.copyFrom(__localBounds);
+		__getBounds(rect, __transform);
+		rect.x -= __transform.tx;
+		rect.y -= __transform.ty;
 	}
 
 	@:noCompletion private function __getRenderBounds(rect:Rectangle, matrix:Matrix):Void
@@ -1839,7 +1828,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (!__renderDirty)
 		{
 			__renderDirty = true;
-			__localBoundsDirty = true;
 			__setParentRenderDirty();
 		}
 		#if (openfl_enable_experimental_update_queue && !dom)
@@ -1857,7 +1845,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (!__transformDirty)
 		{
 			__transformDirty = true;
-			__localBoundsDirty = true;
 
 			__setWorldTransformInvalid();
 			__setParentRenderDirty();
@@ -1872,14 +1859,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (__worldTransformInvalid) return;
 
 		__worldTransformInvalid = true;
-		___worldScale = null;
 
 		if (__graphics != null)
 		{
-			if (__graphics.__invalidateVertexBufferOnTransform)
-			{
-				__graphics.__hardwareDirty = true;
-			}
 			#if !openfl_legacy_scale9grid
 			if (__scale9Grid != null)
 			{
@@ -2001,28 +1983,28 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 				__worldScale9Grid = __scale9Grid;
 			}
 
-			var dirtyShader = false;
-			if (__worldShader != null && __worldShader.__dirtyGL)
-			{
-				dirtyShader = true;
-				__worldShader.__dirtyGL = false;
-			}
+			// var dirtyShader = false;
+			// if (__worldShader != null && __worldShader.__dirtyGL)
+			// {
+			// 	dirtyShader = true;
+			// 	__worldShader.__dirtyGL = false;
+			// }
 
-			if (__graphics != null && __graphics.__usedShaderBuffers != null && __graphics.__usedShaderBuffers.length > 0)
-			{
-				for (shaderBuffer in __graphics.__usedShaderBuffers)
-				{
-					if (shaderBuffer.shader.__dirtyGL)
-					{
-						dirtyShader = true;
-						shaderBuffer.shader.__dirtyGL = false;
-					}
-				}
-			}
-			if (dirtyShader)
-			{
-				__setRenderDirty();
-			}
+			// if (__graphics != null && __graphics.__usedShaderBuffers != null && __graphics.__usedShaderBuffers.length > 0)
+			// {
+			// 	for (shaderBuffer in __graphics.__usedShaderBuffers)
+			// 	{
+			// 		if (shaderBuffer.shader.__dirtyGL)
+			// 		{
+			// 			dirtyShader = true;
+			// 			shaderBuffer.shader.__dirtyGL = false;
+			// 		}
+			// 	}
+			// }
+			// if (dirtyShader)
+			// {
+			// 	__setRenderDirty();
+			// }
 
 			// if (updateChildren && __renderDirty) {
 
@@ -2145,7 +2127,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		else if (value > 1.0) value = 1.0;
 		else if (value < 0.0) value = 0.0;
 
-		if (value != __alpha && !cacheAsBitmap) __setRenderDirty();
+		if (value != __alpha) __setRenderDirty();
 		return __alpha = value;
 	}
 
@@ -2602,8 +2584,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (!__objectTransform.__colorTransform.__equals(value.__colorTransform, true)
 			|| (!cacheAsBitmap && __objectTransform.__colorTransform.alphaMultiplier != value.__colorTransform.alphaMultiplier))
 		{
-			__objectTransform.__colorTransform.__copyFrom(value.colorTransform);
-			__setRenderDirty();
+			__objectTransform.colorTransform = value.__colorTransform;
 		}
 
 		return __objectTransform;
@@ -2674,18 +2655,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		if (value != value) value = 0.0; // flash converts NaN to 0.0
 		if (value != __transform.ty) __setTransformDirty();
 		return __transform.ty = value;
-	}
-
-	@:keep @:noCompletion private function get___worldScale():Float
-	{
-		if (___worldScale == null)
-		{
-			var worldMatrix = __getWorldTransform();
-			var worldScaleX2 = worldMatrix.a * worldMatrix.a + worldMatrix.b * worldMatrix.b;
-			var worldScaleY2 = worldMatrix.c * worldMatrix.c + worldMatrix.d * worldMatrix.d;
-			___worldScale = Math.sqrt(Math.max(worldScaleX2, worldScaleY2));
-		}
-		return ___worldScale;
 	}
 }
 #else
