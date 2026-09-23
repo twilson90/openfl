@@ -22,7 +22,7 @@ class Gradient
 	public var spreadMethod:SpreadMethod;
 	public var focalPointRatio:Float;
 
-	private static var __bitmapCache:LRUCache<BitmapData> = new LRUCache<BitmapData>(128);
+	private static var __bitmapCache:LRUCache<BitmapData> = new LRUCache(128);
 	private static var __pool:ObjectPool<Gradient> = new ObjectPool<Gradient>(() -> new Gradient(), (c) -> c.identity());
 
 	public function new(colors:Array<Int> = null, alphas:Array<Float> = null, ratios:Array<Int> = null, matrix:Matrix = null, type:GradientType = LINEAR,
@@ -91,6 +91,24 @@ class Gradient
 			for (x in 0...256)
 			{
 				var r = x;
+
+				if (r <= ratios[0])
+				{
+					var c = colors[0];
+					var a = Std.int(alphas[0] * 255);
+
+					pixels.writeUnsignedInt((a << 24) | ((c >> 16 & 0xFF) << 16) | ((c >> 8 & 0xFF) << 8) | (c & 0xFF));
+					continue;
+				}
+
+				if (r >= ratios[lastIndex])
+				{
+					var c = colors[lastIndex];
+					var a = Std.int(alphas[lastIndex] * 255);
+
+					pixels.writeUnsignedInt((a << 24) | ((c >> 16 & 0xFF) << 16) | ((c >> 8 & 0xFF) << 8) | (c & 0xFF));
+					continue;
+				}
 
 				while (index < lastIndex - 1 && r > ratios[index + 1])
 					index++;

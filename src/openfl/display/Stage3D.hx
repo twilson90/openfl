@@ -151,6 +151,10 @@ class Stage3D extends EventDispatcher
 
 		visible = true;
 
+		#if openfl_share_context
+		context3D = stage.context3D;
+		#end
+
 		if (stage.stageWidth > 0 && stage.stageHeight > 0)
 		{
 			__resize(stage.stageWidth, stage.stageHeight);

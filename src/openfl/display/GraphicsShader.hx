@@ -200,14 +200,3 @@ class GraphicsShader extends Shader
 		super(code);
 	}
 }
-
-class DefaultGraphicsShader extends GraphicsShader
-{
-	@:glFragmentBody("
-		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
-	")
-	public function new(code:ByteArray = null)
-	{
-		super(code);
-	}
-}

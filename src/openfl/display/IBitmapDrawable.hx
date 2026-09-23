@@ -5,6 +5,7 @@ import openfl.display._internal.IBitmapDrawableType;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
+import openfl.events.RenderEvent;
 
 /**
 	The IBitmapDrawable interface is implemented by objects that can be passed
@@ -29,8 +30,10 @@ interface IBitmapDrawable
 	@:noCompletion private function __getBounds(rect:Rectangle, matrix:Matrix, exStroke:Bool = false):Void;
 	@:noCompletion private function __update(transformOnly:Bool, updateChildren:Bool):Void;
 	@:noCompletion private function __updateTransforms(overrideTransform:Matrix = null):Void;
+	@:noCompletion private function __getWorldAABB():Rectangle;
 	@:noCompletion private var __mask:DisplayObject;
 	@:noCompletion private var __scrollRect:Rectangle;
+	@:noCompletion private var __customRenderEvent:RenderEvent;
 }
 #else
 typedef IBitmapDrawable = flash.display.IBitmapDrawable;

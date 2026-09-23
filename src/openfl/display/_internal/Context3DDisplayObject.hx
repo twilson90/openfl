@@ -49,8 +49,6 @@ class Context3DDisplayObject
 			renderer.__setBlendMode(displayObject.__worldBlendMode);
 			renderer.__pushMaskObject(displayObject);
 
-			var context = renderer.__context3D;
-
 			var rect = Rectangle.__pool.get();
 			var renderTransform = displayObject.__getRenderTransform();
 

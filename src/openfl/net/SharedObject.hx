@@ -676,7 +676,11 @@ class SharedObject extends EventDispatcher
 			#end
 		}
 
-		var id = localPath + "/" + name;
+		var id = name;
+		if (localPath != null && localPath.length > 0)
+		{
+			id = localPath + "/" + name;
+		}
 
 		if (!__sharedObjects.exists(id))
 		{
@@ -874,23 +878,36 @@ class SharedObject extends EventDispatcher
 		}
 	}
 
+	@:noCompletion private static function __trimSlashes(value:String):String
+	{
+		while (StringTools.startsWith(value, "/"))
+		{
+			value = value.substr(1);
+		}
+
+		while (StringTools.endsWith(value, "/"))
+		{
+			value = value.substr(0, value.length - 1);
+		}
+
+		return value;
+	}
+
 	@:noCompletion private static function __getPath(localPath:String, name:String):String
 	{
 		#if lime
-		var path = System.applicationStorageDirectory + "/" + localPath + "/";
+		var path = System.applicationStorageDirectory;
 
-		name = StringTools.replace(name, "//", "/");
-		name = StringTools.replace(name, "//", "/");
+		localPath = StringTools.replace(localPath, "\\", "/");
+		localPath = __trimSlashes(localPath);
 
-		if (StringTools.startsWith(name, "/"))
+		if (localPath.length > 0)
 		{
-			name = name.substr(1);
+			path += "/" + localPath;
 		}
 
-		if (StringTools.endsWith(name, "/"))
-		{
-			name = name.substring(0, name.length - 1);
-		}
+		name = StringTools.replace(name, "\\", "/");
+		name = __trimSlashes(name);
 
 		if (name.indexOf("/") > -1)
 		{
@@ -905,7 +922,7 @@ class SharedObject extends EventDispatcher
 			name += split[split.length - 1];
 		}
 
-		return path + name + ".sol";
+		return Path.normalize(path + "/" + name + ".sol");
 		#else
 		return name + ".sol";
 		#end

@@ -237,11 +237,23 @@ class ColorTransform
 		greenMultiplier *= ct.greenMultiplier;
 		blueMultiplier *= ct.blueMultiplier;
 		alphaMultiplier *= ct.alphaMultiplier;
-
 		redOffset += ct.redOffset;
 		greenOffset += ct.greenOffset;
 		blueOffset += ct.blueOffset;
 		alphaOffset += ct.alphaOffset;
+	}
+
+	@:noCompletion private function __combineFull(ct:ColorTransform):Void
+	{
+		redOffset = ct.redMultiplier * redMultiplier + ct.redOffset;
+		greenOffset = ct.greenMultiplier * greenMultiplier + ct.greenOffset;
+		blueOffset = ct.blueMultiplier * blueMultiplier + ct.blueOffset;
+		alphaOffset = ct.alphaMultiplier * alphaMultiplier + ct.alphaOffset;
+
+		redMultiplier *= ct.redMultiplier;
+		greenMultiplier *= ct.greenMultiplier;
+		blueMultiplier *= ct.blueMultiplier;
+		alphaMultiplier *= ct.alphaMultiplier;
 	}
 
 	@:noCompletion private function __identity():Void

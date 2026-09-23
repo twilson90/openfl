@@ -60,18 +60,6 @@ abstract HxPoint(HxPointData) from HxPointData to HxPointData
 		return '(${x}, ${y})';
 	}
 
-	#if (flash || openfl)
-	@:from inline static function fromFlashPoint(p:flash.geom.Point)
-	{
-		return new HxPoint(p.x, p.y);
-	}
-
-	@:to inline function toFlashPoint()
-	{
-		return new flash.geom.Point(x, y);
-	}
-	#end
-
 	@:from inline static function fromPointStruct(p:{x:Float, y:Float})
 	{
 		return new HxPoint(p.x, p.y);

@@ -3,23 +3,17 @@ package openfl.display;
 #if !flash
 import openfl.display._internal.CairoGraphics;
 import openfl.display._internal.CanvasGraphics;
-import openfl.display._internal.Context3DBuffer;
 import openfl.display._internal.DrawCommandBuffer;
 import openfl.display._internal.DrawCommandReader;
 import openfl.display._internal.ShaderBuffer;
-import openfl.display._internal.Context3DGraphicsBatchBuffer;
+import openfl.display._internal.Context3DGraphicsBuffer;
 import openfl.display._internal.Context3DGraphics;
-import openfl.display3D.IndexBuffer3D;
-import openfl.display3D.VertexBuffer3D;
+import openfl.utils._internal.LRUCache;
 import openfl.errors.ArgumentError;
 import openfl.geom.Matrix;
 import openfl.geom.Point;
 import openfl.geom.Rectangle;
-import openfl.utils._internal.Float32Array;
-import openfl.utils._internal.UInt32Array;
-import openfl.utils.ObjectPool;
 import openfl.Vector;
-import openfl.utils.ArrayUtil;
 #if lime
 import lime.graphics.cairo.Cairo;
 #end
@@ -60,7 +54,7 @@ import js.html.CanvasRenderingContext2D;
 @:access(openfl.display.IGraphicsFill)
 @:access(openfl.display.Shader)
 @:access(openfl.display._internal.ShaderBuffer)
-@:access(openfl.display._internal.Context3DGraphicsBatchBuffer)
+@:access(openfl.display._internal.Context3DGraphicsBuffer)
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:final class Graphics
@@ -70,11 +64,14 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private static var tempVertices:Vector<Float> = new Vector<Float>();
 	@:noCompletion private static var tempBounds:GraphicsBounds = {bounds: new Rectangle(), boundsExStroke: new Rectangle()};
 
+	private static inline var EPSILON = 1e-8;
+	private static inline var LN2 = 0.6931471805599453;
+
 	@:noCompletion private var __bounds:Rectangle;
 	@:noCompletion private var __boundsExStroke:Rectangle;
 	@:noCompletion private var __boundsDirty:Bool;
 	@:noCompletion private var __commands:DrawCommandBuffer;
-	@:noCompletion private var __dirty(default, set):Bool = true;
+	@:noCompletion private var __dirty(default, set):Bool;
 	@:noCompletion private var __hardwareDirty:Bool;
 	@:noCompletion private var __height:Int;
 	@:noCompletion private var __managed:Bool;
@@ -82,7 +79,7 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __softwareDirty:Bool;
 	@:noCompletion private var __transformDirty:Bool;
 	@:noCompletion private var __usedShaderBuffers:List<ShaderBuffer>;
-	@:noCompletion private var __buffer:Context3DGraphicsBatchBuffer;
+	@:noCompletion private var __buffer:Context3DGraphicsBuffer;
 	@:noCompletion private var __wireframe:Bool = #if openfl_enable_gl_wireframe true #else false #end;
 	@:noCompletion private var __visible:Bool;
 	@:noCompletion private var __isHardwareDrawable:Bool;
@@ -93,8 +90,8 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __width:Int;
 	@:noCompletion private var __worldTransform:Matrix;
 	@:noCompletion private var __oldWorldTransform:Matrix;
-	@:noCompletion private var __worldScaleX:Float;
-	@:noCompletion private var __worldScaleY:Float;
+	@:noCompletion private var __worldScale:Float;
+	@:noCompletion private var __worldLOD:Float;
 	#if (js && html5)
 	@:noCompletion private var __canvas:CanvasElement;
 	@:noCompletion private var __context:#if lime CanvasRenderingContext2D #else Dynamic #end;
@@ -105,9 +102,13 @@ import js.html.CanvasRenderingContext2D;
 	@:noCompletion private var __bitmapScaleX:Float;
 	@:noCompletion private var __bitmapScaleY:Float;
 	@:noCompletion private var __useScale9Grid:Bool;
-	#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+	#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 	@:noCompletion private var __hasCurves:Bool;
 	#end
+
+	@:noCompletion private var __cachedBuffer(get, set):Context3DGraphicsBufferSet;
+	@:noCompletion private var __hasGraphicsData(get, never):Bool;
+	@:noCompletion private var ___cachedBuffer:Context3DGraphicsBufferSet;
 
 	@:noCompletion private function new(owner:DisplayObject)
 	{
@@ -116,7 +117,7 @@ import js.html.CanvasRenderingContext2D;
 		__commands = new DrawCommandBuffer();
 		__renderTransform = new Matrix();
 		__worldTransform = new Matrix();
-		__oldWorldTransform = new Matrix();
+		__oldWorldTransform = new Matrix(Math.NaN, Math.NaN, Math.NaN, Math.NaN, Math.NaN, Math.NaN);
 		__bounds = new Rectangle();
 		__boundsExStroke = new Rectangle();
 
@@ -126,10 +127,11 @@ import js.html.CanvasRenderingContext2D;
 		__bitmapScaleX = 1;
 		__bitmapScaleY = 1;
 
-		__worldScaleX = 1.0;
-		__worldScaleY = 1.0;
+		__worldScale = 1.0;
 
 		__isHardwareDrawable = true;
+		__dirty = true;
+		__boundsDirty = true;
 	}
 
 	/**
@@ -184,6 +186,8 @@ import js.html.CanvasRenderingContext2D;
 	public function beginBitmapFill(bitmap:BitmapData, matrix:Matrix = null, repeat:Bool = true, smooth:Bool = false):Void
 	{
 		__commands.beginBitmapFill(bitmap, matrix != null ? matrix.clone() : null, repeat, smooth);
+
+		__invalidateCachedBuffer();
 
 		__visible = true;
 	}
@@ -333,6 +337,8 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.beginGradientFill(type, colors, alphas, ratios, matrix != null ? matrix.clone() : null, spreadMethod, interpolationMethod, focalPointRatio);
 
+		__invalidateCachedBuffer();
+
 		for (alpha in alphas)
 		{
 			if (alpha > 0)
@@ -410,6 +416,8 @@ import js.html.CanvasRenderingContext2D;
 
 			__commands.beginShaderFill(shaderBuffer, matrix);
 
+			__invalidateCachedBuffer();
+
 			__visible = true;
 			#end
 		}
@@ -435,6 +443,8 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.clear();
 
+		__invalidateCachedBuffer();
+
 		if (!__bounds.isEmpty())
 		{
 			__dirty = true;
@@ -442,7 +452,7 @@ import js.html.CanvasRenderingContext2D;
 			__bounds.setEmpty();
 			__boundsExStroke.setEmpty();
 		}
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = false;
 		#end
 		__visible = false;
@@ -463,7 +473,7 @@ import js.html.CanvasRenderingContext2D;
 		__transformDirty = true;
 		__visible = sourceGraphics.__visible;
 		__isHardwareDrawable = sourceGraphics.__isHardwareDrawable;
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = sourceGraphics.__hasCurves;
 		#end
 	}
@@ -512,7 +522,9 @@ import js.html.CanvasRenderingContext2D;
 	public function cubicCurveTo(controlX1:Float, controlY1:Float, controlX2:Float, controlY2:Float, anchorX:Float, anchorY:Float):Void
 	{
 		__commands.cubicCurveTo(controlX1, controlY1, controlX2, controlY2, anchorX, anchorY);
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+
+		__invalidateCachedBuffer();
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = true;
 		#end
 		__dirty = true;
@@ -558,7 +570,9 @@ import js.html.CanvasRenderingContext2D;
 	public function curveTo(controlX:Float, controlY:Float, anchorX:Float, anchorY:Float):Void
 	{
 		__commands.curveTo(controlX, controlY, anchorX, anchorY);
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+
+		__invalidateCachedBuffer();
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = true;
 		#end
 		__dirty = true;
@@ -577,7 +591,9 @@ import js.html.CanvasRenderingContext2D;
 		if (radius == 0) return;
 
 		__commands.drawCircle(x, y, radius);
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+
+		__invalidateCachedBuffer();
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = true;
 		#end
 		__dirty = true;
@@ -606,7 +622,9 @@ import js.html.CanvasRenderingContext2D;
 		if (width == 0 || height == 0) return;
 
 		__commands.drawEllipse(x, y, width, height);
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+
+		__invalidateCachedBuffer();
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = true;
 		#end
 		__dirty = true;
@@ -841,6 +859,8 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.drawQuads(rects, indices, transforms);
 
+		__invalidateCachedBuffer();
+
 		__dirty = true;
 		__visible = true;
 	}
@@ -869,6 +889,8 @@ import js.html.CanvasRenderingContext2D;
 		if (width == 0 && height == 0) return;
 
 		__commands.drawRect(x, y, width, height);
+
+		__invalidateCachedBuffer();
 
 		__dirty = true;
 	}
@@ -906,7 +928,9 @@ import js.html.CanvasRenderingContext2D;
 		if (width == 0 && height == 0) return;
 
 		__commands.drawRoundRect(x, y, width, height, ellipseWidth, ellipseHeight);
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+
+		__invalidateCachedBuffer();
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 		__hasCurves = true;
 		#end
 		__dirty = true;
@@ -1008,6 +1032,8 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.drawTriangles(vertices, indices, uvtData, culling);
 
+		__invalidateCachedBuffer();
+
 		__dirty = true;
 		__visible = true;
 	}
@@ -1026,6 +1052,8 @@ import js.html.CanvasRenderingContext2D;
 	public function endFill():Void
 	{
 		__commands.endFill();
+
+		__invalidateCachedBuffer();
 	}
 
 	/**
@@ -1060,6 +1088,8 @@ import js.html.CanvasRenderingContext2D;
 	public function lineBitmapStyle(bitmap:BitmapData, matrix:Matrix = null, repeat:Bool = true, smooth:Bool = false):Void
 	{
 		__commands.lineBitmapStyle(bitmap, matrix != null ? matrix.clone() : null, repeat, smooth);
+
+		__invalidateCachedBuffer();
 	}
 
 	/**
@@ -1160,6 +1190,8 @@ import js.html.CanvasRenderingContext2D;
 			}
 		}
 		__commands.lineGradientStyle(type, colors, alphas, ratios, matrix, spreadMethod, interpolationMethod, focalPointRatio);
+
+		__invalidateCachedBuffer();
 	}
 
 	#if false
@@ -1356,10 +1388,12 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.lineStyle(thickness, color, alpha, pixelHinting, scaleMode, caps, joints, miterLimit);
 
+		__invalidateCachedBuffer();
+
 		if (thickness != null)
 		{
 			__visible = true;
-			#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
+			#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
 			if (caps == ROUND || joints == ROUND)
 			{
 				__hasCurves = true;
@@ -1399,6 +1433,8 @@ import js.html.CanvasRenderingContext2D;
 
 		__commands.lineTo(x, y);
 
+		__invalidateCachedBuffer();
+
 		__dirty = true;
 
 		#if openfl_disable_hardware_path_rendering
@@ -1419,6 +1455,8 @@ import js.html.CanvasRenderingContext2D;
 	public function moveTo(x:Float, y:Float):Void
 	{
 		__commands.moveTo(x, y);
+
+		__invalidateCachedBuffer();
 	}
 
 	@SuppressWarnings("checkstyle:FieldDocComment")
@@ -1426,6 +1464,8 @@ import js.html.CanvasRenderingContext2D;
 	{
 		if (blendMode == null) blendMode = NORMAL;
 		__commands.overrideBlendMode(blendMode);
+
+		__invalidateCachedBuffer();
 	}
 
 	/**
@@ -1536,17 +1576,23 @@ import js.html.CanvasRenderingContext2D;
 			__buffer.dispose();
 			__buffer = null;
 		}
+
+		if (___cachedBuffer != null)
+		{
+			__cachedBuffer.dispose();
+			__cachedBuffer = null;
+		}
 	}
 
 	@:noCompletion private function __updateBounds():Void
 	{
-		#if (!openfl_legacy_scale9grid)
+		#if !openfl_legacy_scale9grid
 		var worldTransform = __owner.__getWorldTransform();
 		__useScale9Grid = __owner.__scale9Grid != null && !__owner.__isMask && worldTransform.a >= 0 && worldTransform.b == 0 && worldTransform.c == 0
 			&& worldTransform.d >= 0;
 		#end
 
-		if (!__boundsDirty) return;
+		if (!__boundsDirty || __cachedBuffer != null) return;
 
 		var originalBounds = Rectangle.__pool.get();
 		originalBounds.copyFrom(__bounds);
@@ -1566,10 +1612,17 @@ import js.html.CanvasRenderingContext2D;
 		var bounds = exStroke ? __boundsExStroke : __bounds;
 		if (bounds.isEmpty()) return;
 
-		var transformedBounds = Rectangle.__pool.get();
-		bounds.__transform(transformedBounds, matrix);
-		rect.__expand(transformedBounds.x, transformedBounds.y, transformedBounds.width, transformedBounds.height);
-		Rectangle.__pool.release(transformedBounds);
+		if (matrix == null)
+		{
+			rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
+		}
+		else
+		{
+			var transformedBounds = Rectangle.__pool.get();
+			bounds.__transform(transformedBounds, matrix);
+			rect.__expand(transformedBounds.x, transformedBounds.y, transformedBounds.width, transformedBounds.height);
+			Rectangle.__pool.release(transformedBounds);
+		}
 	}
 
 	@:noCompletion private function __hitTest(x:Float, y:Float, shapeFlag:Bool, matrix:Matrix):Bool
@@ -1605,13 +1658,20 @@ import js.html.CanvasRenderingContext2D;
 		return false;
 	}
 
-	@:noCompletion private function __readGraphicsData(graphicsData:Vector<IGraphicsData>):Void
+	@:noCompletion private function __readGraphicsData(graphicsData:Vector<IGraphicsData>, transform:Matrix = null):Void
 	{
 		var data = DrawCommandReader.__pool.get();
 		data.reset(__commands);
 
 		var path:GraphicsPath = null;
 		var stroke:GraphicsStroke = null;
+		var scale = 1.0;
+		if (transform != null)
+		{
+			var sx = Math.abs(transform.a + transform.c);
+			var sy = Math.abs(transform.b + transform.d);
+			scale = Math.sqrt((sx * sx + sy * sy) / 2.0);
+		}
 
 		for (type in __commands.types)
 		{
@@ -1621,6 +1681,7 @@ import js.html.CanvasRenderingContext2D;
 					if (path == null)
 					{
 						path = new GraphicsPath();
+						path.__transform = transform;
 					}
 
 				default:
@@ -1669,9 +1730,10 @@ import js.html.CanvasRenderingContext2D;
 					var c = data.readLineGradientStyle();
 					if (stroke != null)
 					{
-						stroke = new GraphicsStroke(stroke.thickness, stroke.pixelHinting, stroke.scaleMode, stroke.caps, stroke.joints, stroke.miterLimit);
-						stroke.fill = new GraphicsGradientFill(c.type, c.colors, c.alphas, c.ratios, c.matrix, c.spreadMethod, c.interpolationMethod,
-							c.focalPointRatio);
+						stroke = new GraphicsStroke(stroke.thickness * scale, stroke.pixelHinting, stroke.scaleMode, stroke.caps, stroke.joints,
+							stroke.miterLimit);
+						stroke.fill = new GraphicsGradientFill(c.type, c.colors, c.alphas, c.ratios, __applyMatrix(c.matrix, transform), c.spreadMethod,
+							c.interpolationMethod, c.focalPointRatio);
 						graphicsData.push(stroke);
 					}
 
@@ -1679,14 +1741,15 @@ import js.html.CanvasRenderingContext2D;
 					var c = data.readLineBitmapStyle();
 					if (stroke != null)
 					{
-						stroke = new GraphicsStroke(stroke.thickness, stroke.pixelHinting, stroke.scaleMode, stroke.caps, stroke.joints, stroke.miterLimit);
-						stroke.fill = new GraphicsBitmapFill(c.bitmap, c.matrix, c.repeat, c.smooth);
+						stroke = new GraphicsStroke(stroke.thickness * scale, stroke.pixelHinting, stroke.scaleMode, stroke.caps, stroke.joints,
+							stroke.miterLimit);
+						stroke.fill = new GraphicsBitmapFill(c.bitmap, __applyMatrix(c.matrix, transform), c.repeat, c.smooth);
 						graphicsData.push(stroke);
 					}
 
 				case LINE_STYLE:
 					var c = data.readLineStyle();
-					stroke = new GraphicsStroke(c.thickness, c.pixelHinting, c.scaleMode, c.caps, c.joints, c.miterLimit);
+					stroke = new GraphicsStroke(c.thickness * scale, c.pixelHinting, c.scaleMode, c.caps, c.joints, c.miterLimit);
 					stroke.fill = new GraphicsSolidFill(c.color, c.alpha);
 					graphicsData.push(stroke);
 
@@ -1696,7 +1759,7 @@ import js.html.CanvasRenderingContext2D;
 
 				case BEGIN_BITMAP_FILL:
 					var c = data.readBeginBitmapFill();
-					graphicsData.push(new GraphicsBitmapFill(c.bitmap, c.matrix, c.repeat, c.smooth));
+					graphicsData.push(new GraphicsBitmapFill(c.bitmap, __applyMatrix(c.matrix, transform), c.repeat, c.smooth));
 
 				case BEGIN_FILL:
 					var c = data.readBeginFill();
@@ -1704,12 +1767,12 @@ import js.html.CanvasRenderingContext2D;
 
 				case BEGIN_GRADIENT_FILL:
 					var c = data.readBeginGradientFill();
-					graphicsData.push(new GraphicsGradientFill(c.type, c.colors, c.alphas, c.ratios, c.matrix, c.spreadMethod, c.interpolationMethod,
-						c.focalPointRatio));
+					graphicsData.push(new GraphicsGradientFill(c.type, c.colors, c.alphas, c.ratios, __applyMatrix(c.matrix, transform), c.spreadMethod,
+						c.interpolationMethod, c.focalPointRatio));
 
 				case BEGIN_SHADER_FILL:
 					var c = data.readBeginShaderFill();
-					graphicsData.push(new GraphicsShaderFill(c.shaderBuffer.shader, c.matrix));
+					graphicsData.push(new GraphicsShaderFill(c.shaderBuffer.shader, __applyMatrix(c.matrix, transform)));
 
 				default:
 					data.skip(type);
@@ -1722,6 +1785,18 @@ import js.html.CanvasRenderingContext2D;
 		}
 
 		DrawCommandReader.__pool.release(data);
+	}
+
+	@:noCompletion private function __applyMatrix(matrix:Matrix, transform:Matrix):Matrix
+	{
+		if (transform != null)
+		{
+			var transformedMatrix = new Matrix();
+			transformedMatrix.copyFrom(transform);
+			transformedMatrix.concat(matrix);
+			return transformedMatrix;
+		}
+		return matrix;
 	}
 
 	@:noCompletion private function __update(displayMatrix:Matrix, pixelRatio:Float):Void
@@ -1909,25 +1984,28 @@ import js.html.CanvasRenderingContext2D;
 			|| __oldWorldTransform.c != __owner.__worldTransform.c
 			|| __oldWorldTransform.d != __owner.__worldTransform.d)
 		{
-			var sx2 = __owner.__worldTransform.a * __owner.__worldTransform.a + __owner.__worldTransform.b * __owner.__worldTransform.b;
-			var sy2 = __owner.__worldTransform.c * __owner.__worldTransform.c + __owner.__worldTransform.d * __owner.__worldTransform.d;
-			__worldScaleX = Math.sqrt(sx2);
-			__worldScaleY = Math.sqrt(sy2);
-			#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
-			if (__hasCurves)
+			var sx = Math.abs(__owner.__worldTransform.a + __owner.__worldTransform.c);
+			var sy = Math.abs(__owner.__worldTransform.b + __owner.__worldTransform.d);
+			var scale = Math.sqrt((sx * sx + sy * sy) / 2.0);
+
+			__worldScale = scale;
+
+			var lod = Math.pow(2, Math.ceil(Math.log(scale) / LN2));
+			lod = Math.max(0.25, Math.min(16.0, lod));
+
+			if (lod != __worldLOD)
 			{
-				__hardwareDirty = true;
+				__worldLOD = lod;
+
+				#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
+				if (__hasCurves)
+				{
+					__hardwareDirty = true;
+				}
+				#end
 			}
-			#end
 		}
 		__oldWorldTransform.copyFrom(__owner.__worldTransform);
-	}
-
-	@:noCompletion private inline function __getMinScale(matrix:Matrix):Float
-	{
-		var sx2 = matrix.a * matrix.a + matrix.b * matrix.b;
-		var sy2 = matrix.c * matrix.c + matrix.d * matrix.d;
-		return Math.sqrt(Math.min(sx2, sy2));
 	}
 
 	@:noCompletion private function __calculateRenderOffset(result:Point):Void
@@ -2109,12 +2187,22 @@ import js.html.CanvasRenderingContext2D;
 		}
 	}
 
+	@:noCompletion private inline function __invalidateCachedBuffer()
+	{
+		if (__cachedBuffer != null)
+		{
+			__cachedBuffer.dispose();
+			__cachedBuffer = null;
+		}
+	}
+
 	// Get & Set Methods
 	@:noCompletion private function set___dirty(value:Bool):Bool
 	{
 		if (value && __owner != null)
 		{
 			__owner.__setRenderDirty();
+			__owner.__invalidateLocalBounds();
 		}
 
 		if (value)
@@ -2127,7 +2215,7 @@ import js.html.CanvasRenderingContext2D;
 		return __dirty = value;
 	}
 
-	@:noCompletion private function get___isHardwareCompatible():Bool
+	@:noCompletion private inline function get___isHardwareCompatible():Bool
 	{
 		#if (openfl_force_sw_graphics || force_sw_graphics)
 		return false;
@@ -2140,9 +2228,36 @@ import js.html.CanvasRenderingContext2D;
 		return __isHardwareDrawable;
 	}
 
-	@:noCompletion private function get___hasShaders():Bool
+	@:noCompletion private inline function get___hasShaders():Bool
 	{
 		return __usedShaderBuffers != null && __usedShaderBuffers.length > 0;
+	}
+
+	@:noCompletion private inline function get___cachedBuffer():Context3DGraphicsBufferSet
+	{
+		return ___cachedBuffer;
+	}
+
+	@:noCompletion private inline function set___cachedBuffer(value:Context3DGraphicsBufferSet):Context3DGraphicsBufferSet
+	{
+		___cachedBuffer = value;
+		if (___cachedBuffer != null)
+		{
+			for (buffer in ___cachedBuffer.buffers)
+				buffer.__isCached = true;
+
+			__boundsExStroke.copyFrom(___cachedBuffer.boundsExStroke);
+			__bounds.copyFrom(___cachedBuffer.bounds);
+			__visible = true;
+			__owner.__setRenderDirty();
+			__owner.__invalidateLocalBounds();
+		}
+		return value;
+	}
+
+	@:noCompletion private inline function get___hasGraphicsData():Bool
+	{
+		return ___cachedBuffer != null || __commands.length > 0;
 	}
 }
 
@@ -2150,7 +2265,7 @@ import js.html.CanvasRenderingContext2D;
 @:access(openfl.display.Graphics)
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
-class GraphicsBoundsHelper
+private class GraphicsBoundsHelper
 {
 	private static var graphics:Graphics;
 	private static var bounds:Rectangle = new Rectangle();
@@ -2844,13 +2959,13 @@ class GraphicsBoundsHelper
 	}
 }
 
-typedef CubicExtrema =
+private typedef CubicExtrema =
 {
 	var min:Float;
 	var max:Float;
 }
 
-typedef GraphicsBounds =
+private typedef GraphicsBounds =
 {
 	var bounds:Rectangle;
 	var boundsExStroke:Rectangle;

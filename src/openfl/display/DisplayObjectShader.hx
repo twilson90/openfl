@@ -121,14 +121,3 @@ class DisplayObjectShader extends Shader
 		super(code);
 	}
 }
-
-class DefaultDisplayObjectShader extends DisplayObjectShader
-{
-	@:glFragmentBody("
-		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
-	")
-	public function new(code:ByteArray = null)
-	{
-		super(code);
-	}
-}

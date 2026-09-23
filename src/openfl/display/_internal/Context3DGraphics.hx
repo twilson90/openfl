@@ -44,10 +44,10 @@ import lime.utils.ArrayBuffer;
 @:access(openfl.geom.Matrix)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.display._internal.DrawContext)
-@:access(openfl.display._internal.Context3DGraphicsBatchBuffer)
+@:access(openfl.display._internal.Context3DGraphicsBuffer)
 @:access(openfl.display._internal.Gradient)
-@:access(openfl.display._internal.Contour)
-@:access(openfl.display._internal.Fill)
+@:access(openfl.display._internal.Context3DContour)
+@:access(openfl.display._internal.Context3DFill)
 @:access(openfl.display._internal.FillContext)
 @:access(openfl.display._internal.StrokeContext)
 @:access(openfl.display._internal.mesh.Polygon)
@@ -71,7 +71,7 @@ class Context3DGraphics
 
 		ctx.init(graphics);
 
-		if (graphics.__buffer == null) graphics.__buffer = new Context3DGraphicsBatchBuffer(graphics);
+		if (graphics.__buffer == null) graphics.__buffer = new Context3DGraphicsBuffer(graphics);
 		else
 			graphics.__buffer.reset();
 
@@ -361,7 +361,8 @@ class Context3DGraphics
 
 	public static function render(graphics:Graphics, renderer:OpenGLRenderer):Void
 	{
-		if (!graphics.__visible || graphics.__commands.length == 0) return;
+		if (!graphics.__visible) return;
+		if (!graphics.__hasGraphicsData) return;
 
 		if ((graphics.__bitmap != null && !graphics.__dirty) || !graphics.__isHardwareCompatible)
 		{
@@ -392,11 +393,7 @@ class Context3DGraphics
 		{
 			graphics.__bitmap = null;
 
-			#if (openfl_disable_hdpi || openfl_disable_hdpi_graphics)
-			var pixelRatio = 1;
-			#else
-			var pixelRatio = renderer.__pixelRatio;
-			#end
+			var pixelRatio = #if (openfl_disable_hdpi || openfl_disable_hdpi_graphics) 1.0 #else renderer.__pixelRatio #end;
 
 			graphics.__update(renderer.__worldTransform, pixelRatio);
 
@@ -406,13 +403,20 @@ class Context3DGraphics
 
 			if (!bounds.isEmpty() && width >= 1 && height >= 1)
 			{
-				if (graphics.__hardwareDirty)
+				if (graphics.__cachedBuffer != null)
 				{
-					buildBuffer(graphics);
-					graphics.__hardwareDirty = false;
+					graphics.__cachedBuffer.render(graphics, renderer, maskRender);
 				}
+				else
+				{
+					if (graphics.__hardwareDirty || graphics.__buffer == null)
+					{
+						buildBuffer(graphics);
+						graphics.__hardwareDirty = false;
+					}
 
-				graphics.__buffer.render(renderer, maskRender);
+					graphics.__buffer.render(renderer, maskRender);
+				}
 			}
 
 			graphics.__dirty = false;
@@ -428,7 +432,7 @@ class Context3DGraphics
 
 	public static function hitTest(graphics:Graphics, px:Float, py:Float):Bool
 	{
-		if (graphics.__commands.length == 0) return false;
+		if (!graphics.__hasGraphicsData) return false;
 
 		if (!graphics.__isHardwareCompatible)
 		{
@@ -437,6 +441,11 @@ class Context3DGraphics
 			#elseif (lime_cffi)
 			return CairoGraphics.hitTest(graphics, px, py);
 			#end
+		}
+
+		if (graphics.__cachedBuffer != null)
+		{
+			return graphics.__cachedBuffer.hitTest(graphics, px, py);
 		}
 
 		if (graphics.__hardwareDirty)
@@ -457,7 +466,7 @@ class Context3DGraphics
 @:access(openfl.display.DisplayObject)
 @:access(openfl.display._internal.StrokeContext)
 @:access(openfl.display._internal.Context3DGraphics)
-@:access(openfl.display._internal.Contour)
+@:access(openfl.display._internal.Context3DContour)
 @:access(openfl.display.OpenGLRenderer)
 private class DrawContext
 {
@@ -468,7 +477,7 @@ private class DrawContext
 	public var fill:FillContext;
 	public var stroke:StrokeContext;
 	public var windingRule:Context3DWindingRule = EVENODD;
-	public var curveTolerance:Float = 0.25;
+	public var curveTolerance:Float = 0.1;
 
 	public static var current:DrawContext;
 
@@ -480,23 +489,24 @@ private class DrawContext
 	private static var __tempFloatVector:Vector<Float> = new Vector<Float>();
 	private static var __tempIntVector:Vector<Int> = new Vector<Int>();
 
-	#if openfl_enable_gl_graphics_cache
+	#if !openfl_disable_gl_graphics_cache
 	private static var __vertexCache:LRUCache<Array<Float>>;
 	private static var __indexCache:LRUCache<Array<Int>>;
 	private static var __overlappingCache:LRUCache<Bool>;
 	#end
 
-	static private function __init__()
+	public function new()
 	{
-		#if openfl_enable_gl_graphics_cache
-		var limit = #if (openfl_gl_graphics_cache_limit && !macro) Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_graphics_cache_limit")) #else 1024 #end;
-		__vertexCache = new LRUCache<Array<Float>>(limit);
-		__indexCache = new LRUCache<Array<Int>>(limit);
-		__overlappingCache = new LRUCache<Bool>(limit);
+		#if !openfl_disable_gl_graphics_cache
+		if (__vertexCache == null)
+		{
+			var limit = OpenGLRenderer.__graphicsCacheLimit;
+			__vertexCache = new LRUCache(limit);
+			__indexCache = new LRUCache(limit);
+			__overlappingCache = new LRUCache(limit);
+		}
 		#end
 	}
-
-	public function new() {}
 
 	public function newFill()
 	{
@@ -518,9 +528,9 @@ private class DrawContext
 
 		this.graphics = graphics;
 
-		var curveTolerance = #if (openfl_gl_graphics_curve_tolerance && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_graphics_curve_tolerance")) #else 0.25 #end;
-		#if openfl_enable_gl_graphics_rebuild_curves_when_scaled
-		curveTolerance /= Math.min(graphics.__worldScaleX, graphics.__worldScaleY);
+		var curveTolerance = OpenGLRenderer.__graphicsCurveTolerance;
+		#if !openfl_disable_gl_graphics_rebuild_curves_when_scaled
+		curveTolerance /= graphics.__worldLOD;
 		curveTolerance = Math.max(0.0025, curveTolerance);
 		#end
 		this.curveTolerance = curveTolerance;
@@ -612,7 +622,7 @@ private class DrawContext
 
 	inline function buildFill(fill:FillContext, vertices:Vector<Float>, indices:Vector<Int>)
 	{
-		#if openfl_enable_gl_graphics_cache
+		#if !openfl_disable_gl_graphics_cache
 		var hash = fill.hash;
 		hash += windingRule;
 		hash += curveTolerance;
@@ -639,17 +649,17 @@ private class DrawContext
 		untyped (vertices).__array = fillTess.vertices;
 		untyped (indices).__array = fillTess.elements;
 
-		#if openfl_enable_gl_graphics_cache
+		#if !openfl_disable_gl_graphics_cache
 		__vertexCache.set(hash, fillTess.vertices);
 		__indexCache.set(hash, fillTess.elements);
+		__overlappingCache.set(hash, false);
 		#end
 	}
 
-	inline function buildStrokeContour(stroke:StrokeContext, contour:Contour, vertices:Vector<Float>, indices:Vector<Int>)
+	inline function buildStrokeContour(stroke:StrokeContext, contour:Context3DContour, vertices:Vector<Float>, indices:Vector<Int>)
 	{
 		#if openfl_disable_gl_hairlines
-		var thickness = Math.max(#if (openfl_gl_hairline_thickness && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_hairline_thickness")) #else 1.0 #end,
-			stroke.thickness);
+		var thickness = Math.max(OpenGLRenderer.__hairlineThickness, stroke.thickness);
 		#else
 		var thickness = stroke.thickness;
 		#end
@@ -660,7 +670,7 @@ private class DrawContext
 			return false;
 		}
 
-		#if openfl_enable_gl_graphics_cache
+		#if !openfl_disable_gl_graphics_cache
 		var hash = contour.hash;
 		hash += thickness;
 		hash += curveTolerance;
@@ -684,7 +694,7 @@ private class DrawContext
 		untyped indices.__array = lineTess.indices;
 		var selfIntersecting = lineTess.selfIntersecting;
 
-		#if openfl_enable_gl_graphics_cache
+		#if !openfl_disable_gl_graphics_cache
 		__vertexCache.set(hash, untyped (vertices).__array);
 		__indexCache.set(hash, untyped (indices).__array);
 		__overlappingCache.set(hash, selfIntersecting);
@@ -693,7 +703,7 @@ private class DrawContext
 		return selfIntersecting;
 	}
 
-	function releaseArray<T>(arr:Array<T>, pool:ObjectPool<T>, keepLast:Bool)
+	function releaseArray<T>(arr:Array<T>, pool:{function release(value:T):Void;}, keepLast:Bool)
 	{
 		var old = keepLast ? arr.pop() : null;
 		for (item in arr)
@@ -1058,13 +1068,13 @@ private class DrawContext
 	}
 }
 
-@:access(openfl.display._internal.Contour)
-@:access(openfl.display._internal.Fill)
+@:access(openfl.display._internal.Context3DContour)
+@:access(openfl.display._internal.Context3DFill)
 private class FillContext
 {
-	public var contours:Array<Contour> = [];
-	public var contour:Contour;
-	public var fill:Fill = new Fill();
+	public var contours:Array<Context3DContour> = [];
+	public var contour:Context3DContour;
+	public var fill:Context3DFill = new Context3DFill();
 	public var hash(get, never):FastHash;
 
 	static private var __pool:ObjectPool<FillContext> = new ObjectPool<FillContext>(() -> new FillContext(), (c) -> c.identity());
@@ -1081,7 +1091,7 @@ private class FillContext
 	{
 		for (contour in contours)
 		{
-			Contour.__pool.release(contour);
+			Context3DContour.__pool.release(contour);
 		}
 		ArrayUtil.clear(contours);
 		contour = null;
@@ -1090,7 +1100,7 @@ private class FillContext
 	public function newContour(x:Float, y:Float)
 	{
 		endContour();
-		contour = Contour.__pool.get();
+		contour = Context3DContour.__pool.get();
 		contour.init(x, y, DrawContext.current.curveTolerance);
 	}
 

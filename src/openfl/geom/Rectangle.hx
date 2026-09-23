@@ -711,36 +711,16 @@ class Rectangle
 
 	@:noCompletion private function __transform(rect:Rectangle, m:Matrix):Void
 	{
-		var tx0 = m.a * x + m.c * y;
-		var tx1 = tx0;
-		var ty0 = m.b * x + m.d * y;
-		var ty1 = ty0;
+		var tx = m.a * x + m.c * y;
+		var ty = m.b * x + m.d * y;
+		var aw = m.a * width;
+		var ch = m.c * height;
+		var bw = m.b * width;
+		var dh = m.d * height;
+		var minX = tx + (aw < 0 ? aw : 0) + (ch < 0 ? ch : 0);
+		var minY = ty + (bw < 0 ? bw : 0) + (dh < 0 ? dh : 0);
 
-		var tx = m.a * (x + width) + m.c * y;
-		var ty = m.b * (x + width) + m.d * y;
-
-		if (tx < tx0) tx0 = tx;
-		if (ty < ty0) ty0 = ty;
-		if (tx > tx1) tx1 = tx;
-		if (ty > ty1) ty1 = ty;
-
-		tx = m.a * (x + width) + m.c * (y + height);
-		ty = m.b * (x + width) + m.d * (y + height);
-
-		if (tx < tx0) tx0 = tx;
-		if (ty < ty0) ty0 = ty;
-		if (tx > tx1) tx1 = tx;
-		if (ty > ty1) ty1 = ty;
-
-		tx = m.a * x + m.c * (y + height);
-		ty = m.b * x + m.d * (y + height);
-
-		if (tx < tx0) tx0 = tx;
-		if (ty < ty0) ty0 = ty;
-		if (tx > tx1) tx1 = tx;
-		if (ty > ty1) ty1 = ty;
-
-		rect.setTo(tx0 + m.tx, ty0 + m.ty, tx1 - tx0, ty1 - ty0);
+		rect.setTo(minX + m.tx, minY + m.ty, Math.abs(aw) + Math.abs(ch), Math.abs(bw) + Math.abs(dh));
 	}
 
 	// Getters & Setters

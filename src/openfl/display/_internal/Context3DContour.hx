@@ -4,7 +4,7 @@ import openfl.utils.ObjectPool;
 import openfl.utils._internal.FastHash;
 import openfl.geom.Rectangle;
 
-class Contour
+class Context3DContour
 {
 	public var segments:Vector<Segment> = new Vector<Segment>();
 	public var curveTolerance(get, set):Float;
@@ -14,7 +14,7 @@ class Contour
 	public var hash(get, never):FastHash;
 	public var closed(get, never):Bool;
 
-	private var __curveTolerance:Float = 0.25;
+	private var __curveTolerance:Float = 0.1;
 	private var __points:Vector<Float> = new Vector<Float>();
 	private var __pointsDirty:Bool = false;
 	private var __lengthDirty:Bool = false;
@@ -28,7 +28,7 @@ class Contour
 	private var __bounds:Rectangle = null;
 	private var __hash:FastHash;
 
-	private static var __pool:ObjectPool<Contour> = new ObjectPool<Contour>(() -> new Contour(), (c) -> c.init(0, 0));
+	private static var __pool:ObjectPool<Context3DContour> = new ObjectPool<Context3DContour>(() -> new Context3DContour(), (c) -> c.init(0, 0));
 	private static var __tempExtrema:Vector<Float> = new Vector<Float>();
 
 	private function get_points()

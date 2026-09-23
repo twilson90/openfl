@@ -992,6 +992,9 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:noCompletion private var __opaqueBackground:Null<Int>;
 	@:noCompletion private var __renderable:Bool;
 	@:noCompletion private var __renderDirty:Bool;
+	@:noCompletion private var __localBounds:Rectangle;
+	@:noCompletion private var __localBoundsDirty:Bool;
+	@:noCompletion private var __worldAABB:Rectangle;
 	@:noCompletion private var __renderParent:DisplayObject;
 	@:noCompletion private var __renderTransform:Matrix;
 	@:noCompletion private var __renderTransformCache:Matrix;
@@ -1154,6 +1157,8 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		__worldTransform = new Matrix();
 		__worldColorTransform = new ColorTransform();
 		__renderTransform = new Matrix();
+		__localBoundsDirty = true;
+		__worldAABB = new Rectangle();
 		__worldVisible = true;
 
 		__cacheBitmapScale = 1.0;
@@ -1269,15 +1274,21 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	**/
 	public function getBounds(targetCoordinateSpace:DisplayObject):Rectangle
 	{
-		var matrix = Matrix.__pool.get();
-
-		__getTargetCoordinateSpaceMatrix(targetCoordinateSpace, matrix);
-
 		var bounds = new Rectangle();
-		__getBounds(bounds, matrix);
+		if (targetCoordinateSpace == this || targetCoordinateSpace == null)
+		{
+			__getBounds(bounds, null);
+		}
+		else
+		{
+			var matrix = Matrix.__pool.get();
 
-		Matrix.__pool.release(matrix);
+			__getTargetCoordinateSpaceMatrix(targetCoordinateSpace, matrix);
 
+			__getBounds(bounds, matrix);
+
+			Matrix.__pool.release(matrix);
+		}
 		return bounds;
 	}
 
@@ -1301,15 +1312,21 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	**/
 	public function getRect(targetCoordinateSpace:DisplayObject):Rectangle
 	{
-		var matrix = Matrix.__pool.get();
-
-		__getTargetCoordinateSpaceMatrix(targetCoordinateSpace, matrix);
-
 		var bounds = new Rectangle();
-		__getBounds(bounds, matrix, true);
+		if (targetCoordinateSpace == this || targetCoordinateSpace == null)
+		{
+			__getBounds(bounds, null, true);
+		}
+		else
+		{
+			var matrix = Matrix.__pool.get();
 
-		Matrix.__pool.release(matrix);
+			__getTargetCoordinateSpaceMatrix(targetCoordinateSpace, matrix);
 
+			__getBounds(bounds, matrix, true);
+
+			Matrix.__pool.release(matrix);
+		}
 		return bounds;
 	}
 
@@ -1457,12 +1474,19 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 	@:noCompletion private static inline function __calculateAbsoluteTransform(local:Matrix, parentTransform:Matrix, target:Matrix):Void
 	{
-		target.a = local.a * parentTransform.a + local.b * parentTransform.c;
-		target.b = local.a * parentTransform.b + local.b * parentTransform.d;
-		target.c = local.c * parentTransform.a + local.d * parentTransform.c;
-		target.d = local.c * parentTransform.b + local.d * parentTransform.d;
-		target.tx = local.tx * parentTransform.a + local.ty * parentTransform.c + parentTransform.tx;
-		target.ty = local.tx * parentTransform.b + local.ty * parentTransform.d + parentTransform.ty;
+		if (parentTransform == null)
+		{
+			target.copyFrom(local);
+		}
+		else
+		{
+			target.a = local.a * parentTransform.a + local.b * parentTransform.c;
+			target.b = local.a * parentTransform.b + local.b * parentTransform.d;
+			target.c = local.c * parentTransform.a + local.d * parentTransform.c;
+			target.d = local.c * parentTransform.b + local.d * parentTransform.d;
+			target.tx = local.tx * parentTransform.a + local.ty * parentTransform.c + parentTransform.tx;
+			target.ty = local.tx * parentTransform.b + local.ty * parentTransform.d + parentTransform.ty;
+		}
 	}
 
 	@:noCompletion private function __cleanup():Void
@@ -1628,12 +1652,19 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		}
 		else
 		{
-			var r = Rectangle.__pool.get();
-			// r.copyFrom(__scrollRect);
-			r.setTo(0, 0, __scrollRect.width, __scrollRect.height);
-			r.__transform(r, matrix);
-			rect.__expand(r.x, r.y, r.width, r.height);
-			Rectangle.__pool.release(r);
+			if (matrix == null)
+			{
+				rect.__expand(0, 0, __scrollRect.width, __scrollRect.height);
+			}
+			else
+			{
+				var r = Rectangle.__pool.get();
+				r.copyFrom(__scrollRect);
+				// r.setTo(0, 0, __scrollRect.width, __scrollRect.height);
+				r.__transform(r, matrix);
+				rect.__expand(r.x, r.y, r.width, r.height);
+				Rectangle.__pool.release(r);
+			}
 		}
 	}
 
@@ -1642,7 +1673,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		return null;
 	}
 
-	@:noCompletion private function __getFilterBounds(rect:Rectangle, matrix:Matrix):Void
+	@:noCompletion private function __getFilterBounds(rect:Rectangle, matrix:Matrix, scale:Float = 1.0):Void
 	{
 		__getRenderBounds(rect, matrix);
 
@@ -1659,10 +1690,10 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 					+ filter.__bottomExtension);
 			}
 
-			rect.width += extension.width;
-			rect.height += extension.height;
-			rect.x += extension.x;
-			rect.y += extension.y;
+			rect.width += extension.width * scale;
+			rect.height += extension.height * scale;
+			rect.x += extension.x * scale;
+			rect.y += extension.y * scale;
 
 			Rectangle.__pool.release(extension);
 		}
@@ -1691,7 +1722,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 			var r = Rectangle.__pool.get();
 			r.copyFrom(__scrollRect);
 			// r.setTo(0, 0, __scrollRect.width, __scrollRect.height);
-			r.__transform(r, matrix);
+			if (matrix != null) r.__transform(r, matrix);
 			rect.__expand(r.x, r.y, r.width, r.height);
 			Rectangle.__pool.release(r);
 		}
@@ -1701,6 +1732,20 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	{
 		__getWorldTransform();
 		return __renderTransform;
+	}
+
+	@:noCompletion private function __getWorldAABB():Rectangle
+	{
+		if (__localBoundsDirty)
+		{
+			if (__localBounds == null) __localBounds = new Rectangle();
+			else
+				__localBounds.setEmpty();
+			__getBounds(__localBounds, null);
+			__localBoundsDirty = false;
+		}
+		__localBounds.__transform(__worldAABB, __worldTransform);
+		return __worldAABB;
 	}
 
 	@:noCompletion private function __getWorldTransform():Matrix
@@ -1789,11 +1834,11 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		return false;
 	}
 
-	@:noCompletion private function __readGraphicsData(graphicsData:Vector<IGraphicsData>, recurse:Bool):Void
+	@:noCompletion private function __readGraphicsData(graphicsData:Vector<IGraphicsData>, recurse:Bool, transform:Matrix = null):Void
 	{
 		if (__graphics != null)
 		{
-			__graphics.__readGraphicsData(graphicsData);
+			__graphics.__readGraphicsData(graphicsData, transform);
 		}
 	}
 
@@ -1853,6 +1898,7 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 
 			__setWorldTransformInvalid();
 			__setParentRenderDirty();
+			if (parent != null) parent.__invalidateLocalBounds();
 		}
 		#if (openfl_enable_experimental_update_queue && !dom)
 		__setUpdateQueueFlag();
@@ -1876,6 +1922,12 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		}
 	}
 
+	@:noCompletion private function __invalidateLocalBounds():Void
+	{
+		__localBoundsDirty = true;
+		if (parent != null) parent.__invalidateLocalBounds();
+	}
+
 	@:noCompletion private function __stopAllMovieClips():Void {}
 
 	@:noCompletion private function __update(transformOnly:Bool, updateChildren:Bool):Void
@@ -1883,18 +1935,14 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		var renderParent = __renderParent != null ? __renderParent : parent;
 		if (__isMask && renderParent == null) renderParent = __maskTarget;
 		__renderable = (__visible && __scaleX != 0 && __scaleY != 0 && !__isMask && (renderParent == null || !renderParent.__isMask));
+
 		__updateTransforms();
 
 		#if (openfl_enable_experimental_update_queue && !dom)
 		transformOnly = false;
 		#end
 
-		// if (updateChildren && __transformDirty) {
-
 		__transformDirty = false;
-
-		// }
-
 		__worldTransformInvalid = false;
 
 		if (!transformOnly)
@@ -2227,10 +2275,8 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:keep @:noCompletion private function set_height(value:Float):Float
 	{
 		var rect = Rectangle.__pool.get();
-		var matrix = Matrix.__pool.get();
-		matrix.identity();
 
-		__getBounds(rect, matrix);
+		__getBounds(rect, null);
 
 		if (value != rect.height)
 		{
@@ -2242,7 +2288,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		}
 
 		Rectangle.__pool.release(rect);
-		Matrix.__pool.release(matrix);
 
 		return value;
 	}
@@ -2618,10 +2663,8 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 	@:keep @:noCompletion private function set_width(value:Float):Float
 	{
 		var rect = Rectangle.__pool.get();
-		var matrix = Matrix.__pool.get();
-		matrix.identity();
 
-		__getBounds(rect, matrix);
+		__getBounds(rect, null);
 
 		if (value != rect.width)
 		{
@@ -2633,7 +2676,6 @@ class DisplayObject extends EventDispatcher implements IBitmapDrawable #if (open
 		}
 
 		Rectangle.__pool.release(rect);
-		Matrix.__pool.release(matrix);
 
 		return value;
 	}

@@ -1871,7 +1871,7 @@ class TextField extends InteractiveObject
 		var bounds = Rectangle.__pool.get();
 		bounds.copyFrom(__textEngine.bounds);
 		bounds.offset(__offsetX, __offsetY);
-		bounds.__transform(bounds, matrix);
+		if (matrix != null) bounds.__transform(bounds, matrix);
 
 		rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
 

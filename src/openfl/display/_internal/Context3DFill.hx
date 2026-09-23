@@ -8,19 +8,19 @@ import lime.math.ARGB;
 #end
 
 @:access(openfl.display._internal.Gradient)
-class Fill
+class Context3DFill
 {
 	public var color:Null<Int>;
-	public var bitmap:BitmapData;
 	public var bitmapSmooth:Bool;
 	public var bitmapRepeat:Bool;
 	public var matrix:Matrix;
 	public var gradient:Gradient;
+	public var bitmap:BitmapData;
 	public var shaderBuffer:ShaderBuffer;
 	public var hasFill(get, never):Bool;
 	public var hasTransparency(get, never):Bool;
 
-	private static var __pool:ObjectPool<Fill> = new ObjectPool<Fill>(() -> new Fill(), (c) -> c.identity());
+	private static var __pool:ObjectPool<Context3DFill> = new ObjectPool<Context3DFill>(() -> new Context3DFill(), (c) -> c.identity());
 
 	public function new() {}
 
@@ -72,7 +72,7 @@ class Fill
 		}
 	}
 
-	public function copyFrom(other:Fill)
+	public function copyFrom(other:Context3DFill)
 	{
 		color = other.color;
 		bitmap = other.bitmap;
@@ -95,7 +95,7 @@ class Fill
 		}
 	}
 
-	public function equals(other:Fill)
+	public function equals(other:Context3DFill)
 	{
 		return color == other.color
 			&& matrix.equals(other.matrix)

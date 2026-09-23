@@ -1,7 +1,6 @@
 package openfl.display._internal;
 
 import haxe.Constraints.IMap;
-import haxe.io.Bytes;
 import lime.math.ARGB;
 import openfl.display.Graphics;
 import openfl.display.OpenGLRenderer;
@@ -12,19 +11,17 @@ import openfl.display3D.VertexBuffer3D;
 import openfl.geom.ColorTransform;
 import openfl.geom.Matrix;
 import openfl.geom.Rectangle;
-import openfl.utils.ArrayUtil;
-import openfl.utils.ColorUtil;
-import openfl.utils.ObjectPool;
-import openfl.utils._internal.ArrayBufferView;
 import openfl.utils._internal.Float32Array;
 import openfl.utils._internal.UInt32Array;
+import openfl.utils._internal.UInt8Array;
 import openfl.utils._internal.IndexArray;
-import lime.utils.ArrayBuffer;
+import openfl.utils._internal.FIFOCache;
+import openfl.utils._internal.FastHash;
 
 @:access(lime.utils.ArrayBufferView)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.geom.Matrix)
-@:access(openfl.display._internal.Fill)
+@:access(openfl.display._internal.Context3DFill)
 @:access(openfl.display._internal.Gradient)
 @:access(openfl.display._internal.Context3DGraphics)
 @:access(openfl.display.Graphics)
@@ -33,7 +30,7 @@ import lime.utils.ArrayBuffer;
 @:access(openfl.display3D.Context3D)
 @:access(openfl.display3D.IndexBuffer3D)
 @:access(openfl.display3D.VertexBuffer3D)
-class Context3DGraphicsBatchBuffer
+class Context3DGraphicsBuffer
 {
 	static private inline var EPSILON:Float = 1e-6;
 	static private inline var DATA_PER_VERTEX:Int = 6;
@@ -42,6 +39,7 @@ class Context3DGraphicsBatchBuffer
 	private var __graphics:Graphics;
 	private var __dirty:Bool = true;
 	private var __wireframeDirty:Bool = true;
+	private var __isCached:Bool = false;
 
 	private var __triVertexData:Float32Array;
 	private var __triIndexData:IndexArray;
@@ -51,6 +49,10 @@ class Context3DGraphicsBatchBuffer
 	private var __triIndexPosition:Int;
 	private var __lineVertexPosition:Int;
 	private var __lineIndexPosition:Int;
+
+	#if !openfl_disable_gl_graphics_cache
+	private var __hitCache:FIFOCache<Bool>;
+	#end
 
 	public var length(default, null):Int = 0;
 
@@ -67,15 +69,13 @@ class Context3DGraphicsBatchBuffer
 	public var numLines(default, null):Vector<Int> = new Vector<Int>();
 	public var numWires(default, null):Vector<Int> = new Vector<Int>();
 	public var triCulling(default, null):Vector<TriangleCulling> = new Vector<TriangleCulling>();
-	public var fill(default, null):Vector<Fill> = new Vector<Fill>();
+	public var fill(default, null):Vector<Context3DFill> = new Vector<Context3DFill>();
 	public var bounds(default, null):Vector<Rectangle> = new Vector<Rectangle>();
 	public var uv(default, null):Vector<Rectangle> = new Vector<Rectangle>();
 	public var lineThickness(default, null):Vector<Float> = new Vector<Float>();
 	public var selfIntersecting(default, null):Vector<Bool> = new Vector<Bool>();
+	public var batchType(default, null):Vector<Context3DBatchType> = new Vector<Context3DBatchType>();
 
-	private static var __tempUInt32Buffer:UInt32Array;
-	private static var __tempFloat32Buffer:Float32Array;
-	private static var __tempArrayBuffer:ArrayBuffer;
 	private static var __tempColorTransform = new ColorTransform(1, 1, 1, 1, 0, 0, 0, 0);
 	private static var __tempVerticesVector:Vector<Float> = new Vector<Float>();
 	private static var __tempIndicesVector:Vector<Int> = new Vector<Int>();
@@ -85,16 +85,10 @@ class Context3DGraphicsBatchBuffer
 	private static var __wireframeKeyIntMap:Map<Int, Bool> = new Map<Int, Bool>();
 	private static var __wireframeKeyStringMap:Map<String, Bool> = new Map<String, Bool>();
 
-	@:noCompletion private static function __init__()
-	{
-		__tempArrayBuffer = new ArrayBuffer(4);
-		__tempUInt32Buffer = new UInt32Array(__tempArrayBuffer);
-		__tempFloat32Buffer = new Float32Array(__tempArrayBuffer);
-	}
-
 	public function dispose():Void
 	{
 		__graphics = null;
+		__dirty = true;
 
 		if (triVertexBuffer != null)
 		{
@@ -115,17 +109,6 @@ class Context3DGraphicsBatchBuffer
 			lineVertexBuffer = null;
 			lineIndexBuffer = null;
 		}
-		reset();
-	}
-
-	public function reset():Void
-	{
-		length = 0;
-		__triVertexPosition = 0;
-		__triIndexPosition = 0;
-		__lineVertexPosition = 0;
-		__lineIndexPosition = 0;
-
 		if (maskQuadIndexBuffer != null)
 		{
 			maskQuadIndexBuffer.dispose();
@@ -134,23 +117,43 @@ class Context3DGraphicsBatchBuffer
 			maskQuadVertexBuffer = null;
 		}
 
-		for (f in fill)
-			Fill.__pool.release(f);
-		for (r in bounds)
-			Rectangle.__pool.release(r);
-		for (r in uv)
-			Rectangle.__pool.release(r);
+		reset();
+	}
 
-		numTris.length = 0;
-		numTriVertices.length = 0;
-		numLines.length = 0;
-		triCulling.length = 0;
-		fill.length = 0;
-		bounds.length = 0;
-		uv.length = 0;
-		lineThickness.length = 0;
-		selfIntersecting.length = 0;
-		__dirty = true;
+	public function reset():Void
+	{
+		if (!__isCached)
+		{
+			length = 0;
+			__triVertexPosition = 0;
+			__triIndexPosition = 0;
+			__lineVertexPosition = 0;
+			__lineIndexPosition = 0;
+
+			for (f in fill)
+				Context3DFill.__pool.release(f);
+			for (r in bounds)
+				Rectangle.__pool.release(r);
+			for (r in uv)
+				Rectangle.__pool.release(r);
+
+			numTris.length = 0;
+			numTriVertices.length = 0;
+			numLines.length = 0;
+			triCulling.length = 0;
+			fill.length = 0;
+			bounds.length = 0;
+			uv.length = 0;
+			lineThickness.length = 0;
+			selfIntersecting.length = 0;
+			batchType.length = 0;
+
+			__dirty = true;
+		}
+
+		#if !openfl_disable_gl_graphics_cache
+		if (__hitCache != null) __hitCache.clear();
+		#end
 	}
 
 	public function new(graphics:Graphics)
@@ -181,7 +184,7 @@ class Context3DGraphicsBatchBuffer
 		return output;
 	}
 
-	public function append(vertices:Vector<Float>, indices:Vector<Int>, uvtData:Vector<Float>, fill:Fill, triCulling:TriangleCulling = NONE,
+	public function append(vertices:Vector<Float>, indices:Vector<Int>, uvtData:Vector<Float>, fill:Context3DFill, triCulling:TriangleCulling = NONE,
 			points:Vector<Float> = null, closed:Bool = false, thickness:Null<Float> = null, selfIntersecting:Bool = false)
 	{
 		var numVertices = vertices != null ? Std.int(vertices.length / 2) : 0;
@@ -243,6 +246,7 @@ class Context3DGraphicsBatchBuffer
 		if (numVertices > 0)
 		{
 			__triVertexData = __resizeVertexBuffer(__triVertexData, __triVertexPosition + (numVertices * DATA_PER_VERTEX));
+			var temp = new UInt8Array(__triVertexData.buffer);
 
 			for (i in 0...numVertices)
 			{
@@ -269,7 +273,12 @@ class Context3DGraphicsBatchBuffer
 				__triVertexData[offset + 2] = u;
 				__triVertexData[offset + 3] = v;
 				__triVertexData[offset + 4] = t;
-				__setVertexColor(__triVertexData, offset + 5, a, r, g, b);
+
+				var byteOffset = offset * 4 + 20;
+				temp[byteOffset] = b;
+				temp[byteOffset + 1] = g;
+				temp[byteOffset + 2] = r;
+				temp[byteOffset + 3] = a;
 			}
 		}
 
@@ -288,6 +297,7 @@ class Context3DGraphicsBatchBuffer
 		{
 			var numLineIndices = numLines * 2;
 			__lineVertexData = __resizeVertexBuffer(__lineVertexData, __lineVertexPosition + (numPoints * DATA_PER_VERTEX));
+			var temp = new UInt8Array(__lineVertexData.buffer);
 
 			for (i in 0...numPoints)
 			{
@@ -304,7 +314,12 @@ class Context3DGraphicsBatchBuffer
 				__lineVertexData[offset + 2] = u;
 				__lineVertexData[offset + 3] = v;
 				__lineVertexData[offset + 4] = 1.0;
-				__setVertexColor(__lineVertexData, offset + 5, a, r, g, b);
+
+				var byteOffset = offset * 4 + 20;
+				temp[byteOffset] = b;
+				temp[byteOffset + 1] = g;
+				temp[byteOffset + 2] = r;
+				temp[byteOffset + 3] = a;
 			}
 
 			var base = Std.int(__lineVertexPosition / DATA_PER_VERTEX);
@@ -325,18 +340,20 @@ class Context3DGraphicsBatchBuffer
 		__dirty = true;
 
 		// merge with previous batch if possible
-		var batchable = (selfIntersecting || isLine) ? false : isBatchable(fill, triCulling);
-		if (batchable)
+		var batchType:Context3DBatchType = getBatchType(fill, triCulling, selfIntersecting, isLine);
+		if (batchType == null)
 		{
 			var i = length - 1;
 			this.numTris[i] += numTris;
 			this.numTriVertices[i] += numVertices;
 			this.bounds[i].__expand(bounds.x, bounds.y, bounds.width, bounds.height);
 			this.uv[i].__expand(uv.x, uv.y, uv.width, uv.height);
+			Rectangle.__pool.release(bounds);
+			Rectangle.__pool.release(uv);
 			return;
 		}
 
-		var fill2 = Fill.__pool.get();
+		var fill2 = Context3DFill.__pool.get();
 		fill2.copyFrom(fill);
 
 		this.fill.push(fill2);
@@ -348,6 +365,7 @@ class Context3DGraphicsBatchBuffer
 		this.uv.push(uv);
 		this.lineThickness.push(thickness);
 		this.selfIntersecting.push(selfIntersecting);
+		this.batchType.push(batchType);
 
 		length++;
 	}
@@ -373,18 +391,24 @@ class Context3DGraphicsBatchBuffer
 		return bounds;
 	}
 
-	private inline function isBatchable(fill:Fill, triCulling:TriangleCulling):Bool
+	private inline function getBatchType(fill:Context3DFill, triCulling:TriangleCulling, selfIntersecting:Bool, isLine:Bool):Context3DBatchType
 	{
-		if (length == 0) return false;
-
-		var oldFill = this.fill[length - 1];
+		if (length == 0) return EMPTY;
+		#if !openfl_disable_gl_line_masked_rendering
+		if (selfIntersecting && fill.hasTransparency) return SELF_INTERSECTING;
+		var oldSelfIntersecting = this.selfIntersecting[length - 1];
+		if (oldSelfIntersecting != selfIntersecting) return SELF_INTERSECTING;
+		#end
+		#if !openfl_disable_gl_hairlines
+		if (isLine) return LINE;
+		var oldIsLine = this.numLines[length - 1] > 0;
+		if (oldIsLine) return LINE;
+		#end
 		var oldTriCulling = this.triCulling[length - 1];
-		var oldIsStroke = this.numLines[length - 1] > 0;
-
-		if (oldIsStroke) return false;
-		if (oldTriCulling != triCulling) return false;
-		if (!__isFillBatchable(oldFill, fill)) return false;
-		return true;
+		if (oldTriCulling != triCulling) return TRI_CULLING;
+		var oldFill = this.fill[length - 1];
+		if (!__isFillBatchable(oldFill, fill)) return FILL;
+		return null;
 	}
 
 	public function render(renderer:OpenGLRenderer, mask:Bool)
@@ -423,7 +447,29 @@ class Context3DGraphicsBatchBuffer
 		trace("Vertices (" + __triVertexData.length + "):", [for (i in 0...__triVertexData.length) __triVertexData[i]]);
 	}
 
-	public function hitTest(px:Float, py:Float)
+	private function __getHitKey(px:Float, py:Float):Int
+	{
+		var hash = new FastHash();
+		hash += px;
+		hash += py;
+		return hash;
+	}
+
+	public function hitTest(px:Float, py:Float):Bool
+	{
+		#if !openfl_disable_gl_graphics_cache
+		if (__hitCache == null) __hitCache = new FIFOCache(512);
+		var key = __getHitKey(px, py);
+		if (__hitCache.exists(key)) return __hitCache.get(key);
+		#end
+		var result = __hitTest(px, py);
+		#if !openfl_disable_gl_graphics_cache
+		__hitCache.set(key, result);
+		#end
+		return result;
+	}
+
+	private function __hitTest(px:Float, py:Float):Bool
 	{
 		var numBatches = length;
 		var indexOffset = 0;
@@ -455,14 +501,7 @@ class Context3DGraphicsBatchBuffer
 			}
 			indexOffset += numTris * 3;
 		}
-
 		return false;
-	}
-
-	private inline function __setVertexColor(data:Float32Array, offset:Int, a:Int, r:Int, g:Int, b:Int)
-	{
-		__tempUInt32Buffer[0] = (a << 24) | (r << 16) | (g << 8) | b;
-		data[offset] = __tempFloat32Buffer[0];
 	}
 
 	private function __resizeVertexBuffer(buffer:Float32Array, length:Int)
@@ -572,6 +611,7 @@ class Context3DGraphicsBatchBuffer
 		var numVertices = length * 4;
 		var indexData = new IndexArray(length * 6, __getBytesPerElement(numVertices));
 		var vertexData = new Float32Array(numVertices * DATA_PER_VERTEX);
+		var temp = new UInt8Array(vertexData.buffer);
 		var vertexOffset = 0;
 		var indexOffset = 0;
 		var offset = 0;
@@ -593,7 +633,12 @@ class Context3DGraphicsBatchBuffer
 			vertexData[vertexOffset + 2] = uv.x;
 			vertexData[vertexOffset + 3] = uv.y;
 			vertexData[vertexOffset + 4] = 1.0;
-			__setVertexColor(vertexData, vertexOffset + 5, a, r, g, b);
+
+			var byteOffset = vertexOffset * 4 + 20;
+			temp[byteOffset] = b;
+			temp[byteOffset + 1] = g;
+			temp[byteOffset + 2] = r;
+			temp[byteOffset + 3] = a;
 
 			vertexOffset += DATA_PER_VERTEX;
 			vertexData[vertexOffset] = bounds.right;
@@ -601,7 +646,11 @@ class Context3DGraphicsBatchBuffer
 			vertexData[vertexOffset + 2] = uv.right;
 			vertexData[vertexOffset + 3] = uv.y;
 			vertexData[vertexOffset + 4] = 1.0;
-			__setVertexColor(vertexData, vertexOffset + 5, a, r, g, b);
+			byteOffset = vertexOffset * 4 + 20;
+			temp[byteOffset] = b;
+			temp[byteOffset + 1] = g;
+			temp[byteOffset + 2] = r;
+			temp[byteOffset + 3] = a;
 
 			vertexOffset += DATA_PER_VERTEX;
 			vertexData[vertexOffset] = bounds.right;
@@ -609,7 +658,11 @@ class Context3DGraphicsBatchBuffer
 			vertexData[vertexOffset + 2] = uv.right;
 			vertexData[vertexOffset + 3] = uv.bottom;
 			vertexData[vertexOffset + 4] = 1.0;
-			__setVertexColor(vertexData, vertexOffset + 5, a, r, g, b);
+			byteOffset = vertexOffset * 4 + 20;
+			temp[byteOffset] = b;
+			temp[byteOffset + 1] = g;
+			temp[byteOffset + 2] = r;
+			temp[byteOffset + 3] = a;
 
 			vertexOffset += DATA_PER_VERTEX;
 			vertexData[vertexOffset] = bounds.x;
@@ -617,7 +670,11 @@ class Context3DGraphicsBatchBuffer
 			vertexData[vertexOffset + 2] = uv.x;
 			vertexData[vertexOffset + 3] = uv.bottom;
 			vertexData[vertexOffset + 4] = 1.0;
-			__setVertexColor(vertexData, vertexOffset + 5, a, r, g, b);
+			byteOffset = vertexOffset * 4 + 20;
+			temp[byteOffset] = b;
+			temp[byteOffset + 1] = g;
+			temp[byteOffset + 2] = r;
+			temp[byteOffset + 3] = a;
 
 			indexData[indexOffset] = offset;
 			indexData[indexOffset + 1] = offset + 3;
@@ -695,7 +752,7 @@ class Context3DGraphicsBatchBuffer
 		return !(hasNeg && hasPos);
 	}
 
-	private static inline function __isFillBatchable(oldFill:Fill, fill:Fill):Bool
+	private static inline function __isFillBatchable(oldFill:Context3DFill, fill:Context3DFill):Bool
 	{
 		if (oldFill.bitmap != fill.bitmap) return false;
 		if (oldFill.bitmapSmooth != fill.bitmapSmooth) return false;
@@ -706,11 +763,11 @@ class Context3DGraphicsBatchBuffer
 	}
 }
 
-@:access(openfl.display._internal.Context3DGraphicsBatchBuffer)
+@:access(openfl.display._internal.Context3DGraphicsBuffer)
 @:access(openfl.display3D.Context3D)
 @:access(openfl.geom.Rectangle)
 @:access(openfl.geom.Matrix)
-@:access(openfl.display._internal.Fill)
+@:access(openfl.display._internal.Context3DFill)
 @:access(openfl.display._internal.Gradient)
 @:access(openfl.display._internal.Context3DGraphics)
 @:access(openfl.display.Graphics)
@@ -723,7 +780,7 @@ class Renderer
 {
 	private static var context:Context3D;
 	private static var renderer:OpenGLRenderer;
-	private static var buffer:Context3DGraphicsBatchBuffer;
+	private static var buffer:Context3DGraphicsBuffer;
 	private static var graphics:Graphics;
 
 	private static var masking:Bool;
@@ -743,12 +800,15 @@ class Renderer
 	private static var numLines:Int;
 	private static var numMaskQuads:Int;
 	private static var numWires:Int;
-	private static var fill:Fill;
+	private static var fill:Context3DFill;
+	private static var batchType:Context3DBatchType;
 	private static var triCulling:TriangleCulling;
 	private static var isMasked:Bool;
 	private static var isLine:Bool;
 
-	public static inline function render(buffer:Context3DGraphicsBatchBuffer, renderer:OpenGLRenderer, masking:Bool):Void
+	private static var MISSING_TEXTURE:BitmapData = new BitmapData(1, 1, true, 0xffff00ff);
+
+	public static inline function render(buffer:Context3DGraphicsBuffer, renderer:OpenGLRenderer, masking:Bool):Void
 	{
 		if (buffer.length == 0) return;
 
@@ -772,7 +832,6 @@ class Renderer
 		worldColorTransform = renderer.__getColorTransform(graphics.__owner.__worldColorTransform);
 
 		var i = 0;
-		var oldCulling = context.__state.culling;
 		while (i < buffer.length)
 		{
 			numTris = 0;
@@ -801,6 +860,7 @@ class Renderer
 				nextIsLine = calculateIsLine(i + 1);
 				nextIsMasked = !nextIsLine && calculateIsMasked(i + 1);
 				nextFill = buffer.fill[i + 1];
+				nextFill = buffer.fill[i + 1];
 				nextTriCulling = buffer.triCulling[i + 1];
 
 				if (triCulling != nextTriCulling) break;
@@ -808,13 +868,19 @@ class Renderer
 				{
 					if (isMasked != nextIsMasked || nextIsMasked) break;
 					if (isLine != nextIsLine) break;
-					if (!Context3DGraphicsBatchBuffer.__isFillBatchable(fill, nextFill)) break;
+					if (!Context3DGraphicsBuffer.__isFillBatchable(fill, nextFill)) break;
 				}
 
 				i++;
 			}
 
-			setCulling(triCulling);
+			var culling:openfl.display3D.Context3DTriangleFace = switch (triCulling)
+			{
+				case POSITIVE: FRONT;
+				case NEGATIVE: BACK;
+				case NONE: NONE;
+			}
+			context.setCulling(culling);
 
 			if (isMasked)
 			{
@@ -831,7 +897,7 @@ class Renderer
 
 			i++;
 		}
-		context.setCulling(oldCulling);
+		context.setCulling(NONE);
 	}
 
 	private static inline function copyArray(a1:Array<Float>, a2:Array<Float>):Void
@@ -858,21 +924,8 @@ class Renderer
 		#elseif openfl_disable_gl_auto_hairlines
 		return buffer.numLines[i] > 0 && buffer.lineThickness[i] == 0.0;
 		#else
-		return buffer.numLines[i] > 0
-			&& (buffer.lineThickness[i] * Math.min(graphics.__worldScaleX,
-				graphics.__worldScaleY)) < #if (openfl_gl_hairline_thickness && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_hairline_thickness")) #else 1.0 #end;
+		return buffer.numLines[i] > 0 && (buffer.lineThickness[i] * graphics.__worldLOD) < OpenGLRenderer.__hairlineThickness;
 		#end
-	}
-
-	private static inline function setCulling(triCulling:TriangleCulling):Void
-	{
-		var culling:openfl.display3D.Context3DTriangleFace = switch (triCulling)
-		{
-			case POSITIVE: FRONT;
-			case NEGATIVE: BACK;
-			case NONE: NONE;
-		}
-		context.setCulling(culling);
 	}
 
 	private static inline function __render():Void
@@ -1032,4 +1085,66 @@ class Renderer
 		if (shader.__textureCoord != null) context.setVertexBufferAt(shader.__textureCoord.index, vertexBuffer, 2, FLOAT_3);
 		if (shader.__vertexColor != null) context.setVertexBufferAt(shader.__vertexColor.index, vertexBuffer, 5, BYTES_4);
 	}
+}
+
+@:access(openfl.display.Graphics)
+@:access(openfl.display._internal.Context3DGraphicsBuffer)
+class Context3DGraphicsBufferSet
+{
+	private var __graphics:Graphics;
+
+	public var lods:Array<Float>;
+	public var buffers:Array<Context3DGraphicsBuffer>;
+	public var bounds:Rectangle;
+	public var boundsExStroke:Rectangle;
+
+	public function new(lods:Array<Float>, buffers:Array<Context3DGraphicsBuffer>, bounds:Rectangle, boundsExStroke:Rectangle)
+	{
+		this.lods = lods;
+		this.buffers = buffers;
+		if (buffers.length != lods.length) throw "Context3DGraphicsBufferSet: buffers.length != lods.length";
+		this.bounds = bounds;
+		this.boundsExStroke = boundsExStroke;
+	}
+
+	public function render(graphics:Graphics, renderer:OpenGLRenderer, masking:Bool):Void
+	{
+		if (buffers.length == 0) return;
+		var buffer = getBuffer(graphics);
+		buffer.render(renderer, masking);
+	}
+
+	function getBuffer(graphics:Graphics)
+	{
+		var buffer = buffers[0];
+		for (i in 0...lods.length)
+		{
+			buffer = buffers[i];
+			if (lods[i] >= graphics.__worldLOD) break;
+		}
+		buffer.__graphics = graphics;
+		return buffer;
+	}
+
+	public function hitTest(graphics:Graphics, px:Float, py:Float)
+	{
+		return getBuffer(graphics).hitTest(px, py);
+	}
+
+	public function dispose():Void
+	{
+		for (buffer in buffers)
+		{
+			buffer.dispose();
+		}
+	}
+}
+
+enum Context3DBatchType
+{
+	EMPTY;
+	LINE;
+	SELF_INTERSECTING;
+	TRI_CULLING;
+	FILL;
 }

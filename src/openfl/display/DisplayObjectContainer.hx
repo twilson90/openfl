@@ -248,6 +248,7 @@ class DisplayObjectContainer extends InteractiveObject
 
 			__children.insert(index, child);
 			child.parent = this;
+			__invalidateLocalBounds();
 
 			var addedToStage = (stage != null && child.stage == null);
 
@@ -487,6 +488,7 @@ class DisplayObjectContainer extends InteractiveObject
 			__children.remove(child);
 			__removedChildren.push(child);
 			child.__setTransformDirty();
+			__invalidateLocalBounds();
 		}
 
 		return child;
@@ -743,7 +745,9 @@ class DisplayObjectContainer extends InteractiveObject
 
 		for (child in __children)
 		{
-			// unlike visual bounds, we cannot skip children with zero scale on just 1 axis. A child with scaleY == 0 may still have width that we cannot ignore.
+			// unlike visual bounds, we cannot skip children with zero scale on
+			// just 1 axis. A child with scaleY == 0 may still have width that
+			// we cannot ignore.
 			if (child.__scaleX == 0 && child.__scaleY == 0) continue;
 			// if (child.__isMask) continue;
 
@@ -755,9 +759,9 @@ class DisplayObjectContainer extends InteractiveObject
 		Matrix.__pool.release(childWorldTransform);
 	}
 
-	@:noCompletion private override function __getFilterBounds(rect:Rectangle, matrix:Matrix):Void
+	@:noCompletion private override function __getFilterBounds(rect:Rectangle, matrix:Matrix, scale:Float = 1.0):Void
 	{
-		super.__getFilterBounds(rect, matrix);
+		super.__getFilterBounds(rect, matrix, scale);
 
 		if (__scrollRect != null) return;
 
@@ -771,7 +775,7 @@ class DisplayObjectContainer extends InteractiveObject
 
 			DisplayObject.__calculateAbsoluteTransform(child.__transform, matrix, childWorldTransform);
 
-			child.__getFilterBounds(rect, childWorldTransform);
+			child.__getFilterBounds(rect, childWorldTransform, scale);
 		}
 
 		Matrix.__pool.release(childWorldTransform);
@@ -904,16 +908,38 @@ class DisplayObjectContainer extends InteractiveObject
 		return false;
 	}
 
-	@:noCompletion private override function __readGraphicsData(graphicsData:Vector<IGraphicsData>, recurse:Bool):Void
+	@:noCompletion private override function __readGraphicsData(graphicsData:Vector<IGraphicsData>, recurse:Bool, parentTransform:Matrix = null):Void
 	{
-		super.__readGraphicsData(graphicsData, recurse);
-
-		if (recurse)
+		if (!recurse)
 		{
+			super.__readGraphicsData(graphicsData, false);
+			return;
+		}
+
+		// the root object does not apply its transform
+		if (parentTransform == null)
+		{
+			if (__graphics != null) __graphics.__readGraphicsData(graphicsData);
+
+			var matrix = Matrix.__pool.get();
+
 			for (child in __children)
-			{
-				child.__readGraphicsData(graphicsData, recurse);
-			}
+				child.__readGraphicsData(graphicsData, true, matrix);
+
+			Matrix.__pool.release(matrix);
+		}
+		else
+		{
+			var matrix = Matrix.__pool.get();
+			matrix.copyFrom(parentTransform);
+			matrix.concat(__transform);
+
+			if (__graphics != null) __graphics.__readGraphicsData(graphicsData, matrix);
+
+			for (child in __children)
+				child.__readGraphicsData(graphicsData, true, matrix);
+
+			Matrix.__pool.release(matrix);
 		}
 	}
 

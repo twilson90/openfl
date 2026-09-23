@@ -5,7 +5,7 @@ import openfl.display.CapsStyle;
 
 class PolyLineTesselator
 {
-	public var curveTolerance:Float = 0.25;
+	public var curveTolerance:Float = 0.1;
 	public var vertices(default, null):Array<Float> = [];
 	public var indices(default, null):Array<Int> = [];
 
@@ -16,7 +16,7 @@ class PolyLineTesselator
 	static private inline var EPSILON:Float = 1e-6;
 	static private inline var EPSILON2:Float = 1e-12;
 
-	public function new(curveTolerance:Float = 0.25)
+	public function new(curveTolerance:Float = 0.1)
 	{
 		this.curveTolerance = curveTolerance;
 	}

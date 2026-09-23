@@ -3,6 +3,7 @@ package openfl.display;
 #if !flash
 import openfl.display._internal.GraphicsDataType;
 import openfl.Vector;
+import openfl.geom.Matrix;
 
 /**
 	A collection of drawing commands and the coordinate parameters for those
@@ -26,6 +27,7 @@ import openfl.Vector;
 @:fileXml('tags="haxe,release"')
 @:noDebug
 #end
+@:access(openfl.geom.Matrix)
 @:final class GraphicsPath implements IGraphicsData implements IGraphicsPath
 {
 	private static inline var SIN45:Float = 0.70710678118654752440084436210485;
@@ -48,6 +50,8 @@ import openfl.Vector;
 		GraphicsPathWinding class.
 	**/
 	public var winding:GraphicsPathWinding;
+
+	@:noCompletion private var __transform:Matrix;
 
 	@:noCompletion private var __graphicsDataType(default, null):GraphicsDataType;
 
@@ -87,6 +91,16 @@ import openfl.Vector;
 		if (commands == null) commands = new Vector();
 		if (data == null) data = new Vector();
 
+		if (__transform != null)
+		{
+			controlX1 = __transform.__transformX(controlX1, controlY1);
+			controlY1 = __transform.__transformY(controlX1, controlY1);
+			controlX2 = __transform.__transformX(controlX2, controlY2);
+			controlY2 = __transform.__transformY(controlX2, controlY2);
+			anchorX = __transform.__transformX(anchorX, anchorY);
+			anchorY = __transform.__transformY(anchorX, anchorY);
+		}
+
 		commands.push(GraphicsPathCommand.CUBIC_CURVE_TO);
 		data.push(controlX1);
 		data.push(controlY1);
@@ -118,6 +132,14 @@ import openfl.Vector;
 		if (commands == null) commands = new Vector();
 		if (data == null) data = new Vector();
 
+		if (__transform != null)
+		{
+			controlX = __transform.__transformX(controlX, controlY);
+			controlY = __transform.__transformY(controlX, controlY);
+			anchorX = __transform.__transformX(anchorX, anchorY);
+			anchorY = __transform.__transformY(anchorX, anchorY);
+		}
+
 		commands.push(GraphicsPathCommand.CURVE_TO);
 		data.push(controlX);
 		data.push(controlY);
@@ -136,6 +158,11 @@ import openfl.Vector;
 	{
 		if (commands == null) commands = new Vector();
 		if (data == null) data = new Vector();
+		if (__transform != null)
+		{
+			x = __transform.__transformX(x, y);
+			y = __transform.__transformY(x, y);
+		}
 
 		commands.push(GraphicsPathCommand.LINE_TO);
 		data.push(x);
@@ -154,6 +181,12 @@ import openfl.Vector;
 		if (commands == null) commands = new Vector();
 		if (data == null) data = new Vector();
 
+		if (__transform != null)
+		{
+			x = __transform.__transformX(x, y);
+			y = __transform.__transformY(x, y);
+		}
+
 		commands.push(GraphicsPathCommand.MOVE_TO);
 		data.push(x);
 		data.push(y);
@@ -170,6 +203,12 @@ import openfl.Vector;
 	{
 		if (commands == null) commands = new Vector();
 		if (data == null) data = new Vector();
+
+		if (__transform != null)
+		{
+			x = __transform.__transformX(x, y);
+			y = __transform.__transformY(x, y);
+		}
 
 		commands.push(GraphicsPathCommand.LINE_TO);
 		data.push(x);
@@ -189,6 +228,11 @@ import openfl.Vector;
 		if (data == null) data = new Vector();
 
 		commands.push(GraphicsPathCommand.MOVE_TO);
+		if (__transform != null)
+		{
+			x = __transform.__transformX(x, y);
+			y = __transform.__transformY(x, y);
+		}
 		data.push(x);
 		data.push(y);
 	}

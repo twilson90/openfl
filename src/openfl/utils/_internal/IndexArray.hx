@@ -1,5 +1,7 @@
 package openfl.utils._internal;
 
+import haxe.io.Bytes;
+
 interface IIndexArray
 {
 	public var data(get, never):ArrayBufferView;
@@ -163,5 +165,20 @@ abstract IndexArray(IIndexArray) from IIndexArray to IIndexArray
 	public inline function __get(i:Int):Int
 	{
 		return this.get(i);
+	}
+
+	public static function fromBytes(bytes:Bytes, bytesPerElement:Int):IndexArray
+	{
+		switch (bytesPerElement)
+		{
+			case 1:
+				return new UInt8IndexArray(UInt8Array.fromBytes(bytes));
+			case 2:
+				return new UInt16IndexArray(UInt16Array.fromBytes(bytes));
+			case 4:
+				return new UInt32IndexArray(UInt32Array.fromBytes(bytes));
+			default:
+				throw 'Invalid type';
+		}
 	}
 }

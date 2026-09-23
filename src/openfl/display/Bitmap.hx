@@ -153,8 +153,7 @@ class Bitmap extends DisplayObject
 		{
 			bounds.setTo(0, 0, 0, 0);
 		}
-
-		bounds.__transform(bounds, matrix);
+		if (matrix != null) bounds.__transform(bounds, matrix);
 		rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
 		Rectangle.__pool.release(bounds);
 	}

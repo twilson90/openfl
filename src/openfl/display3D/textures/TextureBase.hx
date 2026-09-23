@@ -57,10 +57,12 @@ class TextureBase extends EventDispatcher
 	@:noCompletion private var __textureTarget:Int;
 	@:noCompletion private var __width:Int;
 
-	// @:noCompletion private var __msaaFbo:GLFramebuffer;
-	// @:noCompletion private var __msaaSamples:Int;
-	// @:noCompletion private var __msaaColor:GLRenderbuffer;
-	// @:noCompletion private var __msaaDepth:GLRenderbuffer;
+	@:noCompletion private var __msaaFbo:GLFramebuffer;
+	@:noCompletion private var __msaaSamples:Int;
+	@:noCompletion private var __msaaWidth:Int;
+	@:noCompletion private var __msaaHeight:Int;
+	@:noCompletion private var __msaaColor:GLRenderbuffer;
+	@:noCompletion private var __msaaDepth:GLRenderbuffer;
 
 	@:noCompletion private function new(context:Context3D)
 	{
@@ -190,22 +192,22 @@ class TextureBase extends EventDispatcher
 
 	@:noCompletion private function __disposeMSAA():Void
 	{
-		// var gl = __context.gl;
-		// if (__msaaFbo != null)
-		// {
-		// 	gl.deleteFramebuffer(__msaaFbo);
-		// 	__msaaFbo = null;
-		// }
-		// if (__msaaColor != null)
-		// {
-		// 	gl.deleteRenderbuffer(__msaaColor);
-		// 	__msaaColor = null;
-		// }
-		// if (__msaaDepth != null)
-		// {
-		// 	gl.deleteRenderbuffer(__msaaDepth);
-		// 	__msaaDepth = null;
-		// }
+		var gl = __context.gl;
+		if (__msaaFbo != null)
+		{
+			gl.deleteFramebuffer(__msaaFbo);
+			__msaaFbo = null;
+		}
+		if (__msaaColor != null)
+		{
+			gl.deleteRenderbuffer(__msaaColor);
+			__msaaColor = null;
+		}
+		if (__msaaDepth != null)
+		{
+			gl.deleteRenderbuffer(__msaaDepth);
+			__msaaDepth = null;
+		}
 	}
 
 	@SuppressWarnings("checkstyle:Dynamic")
@@ -213,66 +215,65 @@ class TextureBase extends EventDispatcher
 	{
 		var gl = __context.gl;
 
-		// if (antiAlias > 0)
-		// {
-		// 	// create MSAA framebuffer once
-		// 	if (__msaaFbo == null || __msaaSamples != antiAlias)
-		// 	{
-		// 		__disposeMSAA();
+		if (antiAlias > 0)
+		{
+			// create MSAA framebuffer once
+			if (__msaaFbo == null || __msaaSamples != antiAlias || __msaaWidth != __width || __msaaHeight != __height)
+			{
+				__disposeMSAA();
 
-		// 		__msaaSamples = antiAlias;
+				__msaaSamples = antiAlias;
+				__msaaWidth = __width;
+				__msaaHeight = __height;
+				__msaaFbo = gl.createFramebuffer();
+				__context.__bindGLFramebuffer(__msaaFbo);
 
-		// 		__msaaFbo = gl.createFramebuffer();
-		// 		__context.__bindGLFramebuffer(__msaaFbo);
+				// -------------------------
+				// COLOR (multisampled)
+				// -------------------------
+				var colorFormat = untyped gl.RGBA8;
+				__msaaColor = gl.createRenderbuffer();
+				gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaColor);
+				untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, colorFormat, __width, __height);
 
-		// 		// -------------------------
-		// 		// COLOR (multisampled)
-		// 		// -------------------------
-		// 		__msaaColor = gl.createRenderbuffer();
-		// 		gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaColor);
+				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, __msaaColor);
 
-		// 		untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, gl.RGBA8, __width, __height);
+				// -------------------------
+				// DEPTH / STENCIL
+				// -------------------------
+				if (enableDepthAndStencil)
+				{
+					__msaaDepth = gl.createRenderbuffer();
+					gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaDepth);
+					var depthFormat = untyped gl.DEPTH24_STENCIL8;
+					untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, depthFormat, __width, __height);
 
-		// 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, __msaaColor);
+					if (Context3D.__glDepthStencil != 0)
+					{
+						gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
+					}
+					else
+					{
+						gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
+					}
+				}
 
-		// 		// -------------------------
-		// 		// DEPTH / STENCIL
-		// 		// -------------------------
-		// 		if (enableDepthAndStencil)
-		// 		{
-		// 			__msaaDepth = gl.createRenderbuffer();
-		// 			gl.bindRenderbuffer(gl.RENDERBUFFER, __msaaDepth);
+				// error check
+				if (__context.__enableErrorChecking)
+				{
+					var code = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 
-		// 			var depthFormat = (Context3D.__glDepthStencil != 0) ? Context3D.__glDepthStencil : gl.DEPTH_COMPONENT16;
+					if (code != gl.FRAMEBUFFER_COMPLETE)
+					{
+						Log.warn('MSAA FBO error: ${code} width:${__width} height:${__height}');
+					}
+				}
 
-		// 			untyped gl.renderbufferStorageMultisample(gl.RENDERBUFFER, __msaaSamples, depthFormat, __width, __height);
+				gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+			}
 
-		// 			if (Context3D.__glDepthStencil != 0)
-		// 			{
-		// 				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
-		// 			}
-		// 			else
-		// 			{
-		// 				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, __msaaDepth);
-		// 			}
-		// 		}
-
-		// 		// error check
-		// 		if (__context.__enableErrorChecking)
-		// 		{
-		// 			var code = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-
-		// 			if (code != gl.FRAMEBUFFER_COMPLETE)
-		// 			{
-		// 				Log.warn('MSAA FBO error: ${code} width:${__width} height:${__height}');
-		// 			}
-		// 		}
-
-		// 		gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-		// 	}
-
-		// 	return __msaaFbo;
-		// }
+			return __msaaFbo;
+		}
 
 		if (__glFramebuffer == null)
 		{
@@ -332,6 +333,22 @@ class TextureBase extends EventDispatcher
 		}
 
 		return __glFramebuffer;
+	}
+
+	@:noCompletion private function __resolveMSAA():Void
+	{
+		if (__msaaFbo == null) return;
+
+		var gl = __context.gl;
+		var resolveFbo = __getGLFramebuffer(false, 0, 0);
+		var currentFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, __msaaFbo);
+		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
+		gl.blitFramebuffer(0, 0, __width, __height, 0, 0, __width, __height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+
+		// Restore
+		gl.bindFramebuffer(gl.FRAMEBUFFER, currentFbo);
 	}
 
 	#if lime

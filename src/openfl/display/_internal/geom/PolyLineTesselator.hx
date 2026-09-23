@@ -16,7 +16,7 @@ class PolyLineTesselator
 	private var prevInnerIdx:Int = -1;
 	private var prevCenterIdx:Int = -1;
 	private var prevOuterIdx:Int = -1;
-	private var curveTolerance:Float = 0.25;
+	private var curveTolerance:Float = 0.1;
 
 	var half:Float = 0.0;
 	var angleStep:Float = 0.0;
@@ -34,7 +34,7 @@ class PolyLineTesselator
 	static private inline var EPSILON:Float = 1e-6;
 	static private inline var EPSILON2:Float = 1e-12;
 
-	public function new(curveTolerance:Float = 0.25)
+	public function new(curveTolerance:Float = 0.1)
 	{
 		this.curveTolerance = curveTolerance;
 	}

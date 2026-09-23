@@ -1296,7 +1296,8 @@ import lime.math.Vector2;
 				clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
 			}
 
-			// __resolveMSAA(__backBufferTexture);
+			// Resolve the backbuffer before swapping (it has the final rendered content)
+			__backBufferTexture.__resolveMSAA();
 
 			var cacheBuffer = __backBufferTexture;
 			__backBufferTexture = __frontBufferTexture;
@@ -1670,10 +1671,10 @@ import lime.math.Vector2;
 	**/
 	public function setRenderToBackBuffer():Void
 	{
-		// if (__state.renderToTexture != null)
-		// {
-		// 	__resolveMSAA(__state.renderToTexture);
-		// }
+		if (__state.renderToTexture != null)
+		{
+			__state.renderToTexture.__resolveMSAA();
+		}
 		__state.renderToTexture = null;
 	}
 
@@ -1715,10 +1716,10 @@ import lime.math.Vector2;
 	**/
 	public function setRenderToTexture(texture:TextureBase, enableDepthAndStencil:Bool = false, antiAlias:Int = 0, surfaceSelector:Int = 0):Void
 	{
-		// if (__state.renderToTexture != texture)
-		// {
-		// 	__resolveMSAA(__state.renderToTexture);
-		// }
+		if (__state.renderToTexture != null && __state.renderToTexture != texture)
+		{
+			__state.renderToTexture.__resolveMSAA();
+		}
 
 		__state.renderToTexture = texture;
 		__state.renderToTextureDepthStencil = enableDepthAndStencil;
@@ -2201,10 +2202,12 @@ import lime.math.Vector2;
 		if (__state.renderToTexture != null)
 		{
 			if (#if openfl_disable_context_cache true #else __contextState.renderToTexture != __state.renderToTexture
-				|| __contextState.renderToTextureSurfaceSelector != __state.renderToTextureSurfaceSelector #end)
+				|| __contextState.renderToTextureSurfaceSelector != __state.renderToTextureSurfaceSelector
+				|| __contextState.renderToTextureAntiAlias != __state.renderToTextureAntiAlias #end)
 			{
 				var framebuffer = __state.renderToTexture.__getGLFramebuffer(__state.renderToTextureDepthStencil, __state.renderToTextureAntiAlias,
 					__state.renderToTextureSurfaceSelector);
+
 				__bindGLFramebuffer(framebuffer);
 
 				__contextState.renderToTexture = __state.renderToTexture;
@@ -2227,8 +2230,7 @@ import lime.math.Vector2;
 
 			if (#if openfl_disable_context_cache true #else __contextState.renderToTexture != null
 				|| __contextState.__currentGLFramebuffer != __state.__primaryGLFramebuffer
-				|| __contextState.backBufferEnableDepthAndStencil != __state.backBufferEnableDepthAndStencil #end
-			)
+				|| __contextState.backBufferEnableDepthAndStencil != __state.backBufferEnableDepthAndStencil #end)
 			{
 				__bindGLFramebuffer(__state.__primaryGLFramebuffer);
 
@@ -2725,20 +2727,6 @@ import lime.math.Vector2;
 		}
 	}
 
-	// @:noCompletion private function __resolveMSAA(texture:TextureBase):Void
-	// {
-	// 	if (texture != null && texture.__msaaFbo != null)
-	// 	{
-	// 		var resolveFbo = texture.__getGLFramebuffer(false, 0, 0);
-	// 		var gl:lime.graphics.WebGL2RenderContext = cast this.gl;
-	// 		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, texture.__msaaFbo);
-	// 		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFbo);
-	// 		gl.blitFramebuffer(0, 0, texture.__width, texture.__height, 0, 0, texture.__width, texture.__height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-	// 		// There's probably a better place to put clear()?
-	// 		clear(0, 0, 0, 0, 1, 0, Context3DClearMask.COLOR);
-	// 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	// 	}
-	// }
 	// Get & Set Methods
 	@:noCompletion private function get_enableErrorChecking():Bool
 	{

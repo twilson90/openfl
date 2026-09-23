@@ -26,6 +26,7 @@ import openfl.utils.Future;
 import openfl.utils.Object;
 import openfl.Lib;
 import openfl.Vector;
+import openfl.events.RenderEvent;
 #if lime
 import lime._internal.graphics.ImageCanvasUtil; // TODO
 import lime.app.Application;
@@ -206,6 +207,7 @@ class BitmapData implements IBitmapDrawable
 	@:noCompletion private var __mask:DisplayObject;
 	@:noCompletion private var __renderable:Bool;
 	@:noCompletion private var __renderTransform:Matrix;
+	@:noCompletion private var __worldAABB:Rectangle;
 	@:noCompletion private var __scrollRect:Rectangle;
 	@:noCompletion private var __stencilBuffer:GLRenderbuffer;
 	@SuppressWarnings("checkstyle:Dynamic") @:noCompletion private var __surface:#if lime CairoSurface #else Dynamic #end;
@@ -228,6 +230,7 @@ class BitmapData implements IBitmapDrawable
 	@:noCompletion private var __worldColorTransform:ColorTransform;
 	@:noCompletion private var __worldTransform:Matrix;
 	@:noCompletion private var __asset:Bool;
+	@:noCompletion private var __customRenderEvent:RenderEvent;
 
 	/**
 		Creates a BitmapData object with a specified width and height. If you specify a value for
@@ -319,6 +322,7 @@ class BitmapData implements IBitmapDrawable
 		}
 
 		__renderTransform = new Matrix();
+		__worldAABB = new Rectangle();
 		__worldAlpha = 1;
 		__worldTransform = new Matrix();
 		__worldColorTransform = new ColorTransform();
@@ -767,6 +771,10 @@ class BitmapData implements IBitmapDrawable
 		}
 		#end
 
+		if (__vertexBuffer != null) __vertexBuffer.dispose();
+
+		if (__texture != null) __texture.dispose();
+
 		image = null;
 
 		width = 0;
@@ -777,7 +785,6 @@ class BitmapData implements IBitmapDrawable
 		readable = false;
 
 		__surface = null;
-
 		__vertexBuffer = null;
 		__framebuffer = null;
 		__framebufferContext = null;
@@ -986,7 +993,7 @@ class BitmapData implements IBitmapDrawable
 				var bounds = Rectangle.__pool.get();
 				var boundsMatrix = Matrix.__pool.get();
 
-				source.__getBounds(bounds, boundsMatrix);
+				source.__getBounds(bounds, null);
 
 				var width:Int = Math.ceil(bounds.width);
 				var height:Int = Math.ceil(bounds.height);
@@ -3191,13 +3198,7 @@ class BitmapData implements IBitmapDrawable
 		var cacheRTTSurfaceSelector = context.__state.renderToTextureSurfaceSelector;
 
 		var texture = getTexture(context);
-		#if openfl_disable_gl_cached_bitmap_antialiasing
-		var antialiasing = 0;
-		#elseif (openfl_gl_cached_bitmap_antialiasing && !macro)
-		var antialiasing = Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_cached_bitmap_antialiasing"));
-		#else
-		var antialiasing:Int = __textureContext.attributes.antialiasing != null ? __textureContext.attributes.antialiasing : 0;
-		#end
+		var antialiasing = OpenGLRenderer.__cachedBitmapAntialiasing;
 		context.setRenderToTexture(texture, true, antialiasing);
 
 		renderer.__render(source);
@@ -3338,10 +3339,17 @@ class BitmapData implements IBitmapDrawable
 
 	@:noCompletion private function __getBounds(rect:Rectangle, matrix:Matrix, exStroke:Bool = false):Void
 	{
-		var bounds = Rectangle.__pool.get();
-		this.rect.__transform(bounds, matrix);
-		rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
-		Rectangle.__pool.release(bounds);
+		if (matrix == null)
+		{
+			rect.__expand(0, 0, this.rect.width, this.rect.height);
+		}
+		else
+		{
+			var bounds = Rectangle.__pool.get();
+			this.rect.__transform(bounds, matrix);
+			rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
+			Rectangle.__pool.release(bounds);
+		}
 	}
 
 	// @:noCompletion private function __getFramebuffer (context:Context3D, requireStencil:Bool):GLFramebuffer {
@@ -3484,6 +3492,12 @@ class BitmapData implements IBitmapDrawable
 		}
 
 		__renderTransform.copyFrom(__worldTransform);
+	}
+
+	@:noCompletion private function __getWorldAABB():Rectangle
+	{
+		rect.__transform(__worldAABB, __renderTransform);
+		return __worldAABB;
 	}
 }
 #else

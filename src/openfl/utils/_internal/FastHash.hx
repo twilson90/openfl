@@ -9,8 +9,12 @@ import openfl.geom.ColorTransform;
 abstract FastHash(Int) from Int to Int
 {
 	private static var __bytes:Bytes;
+
 	static inline var FNV_OFFSET_BASIS:Int = -2128831035;
 	static inline var FNV_PRIME:Int = 16777619;
+
+	// Distinguishes null from actual data.
+	static inline var NULL_MARKER:Int = 0;
 
 	private static function __init__():Void
 	{
@@ -27,41 +31,42 @@ abstract FastHash(Int) from Int to Int
 		this = FNV_OFFSET_BASIS;
 	}
 
+	public inline function addNull():FastHash
+	{
+		return __addByte(NULL_MARKER);
+	}
+
 	// Helper: add a single byte
-	inline function addByte(b:Int):FastHash
+	private inline function __addByte(b:Int):FastHash
 	{
 		this = (this ^ (b & 0xFF)) * FNV_PRIME;
 		this &= 0xFFFFFFFF;
 		return this;
 	}
 
-	// Operator overloading: += for strings
-
 	@:op(A += B)
-	public inline function addString(s:String):FastHash
+	public inline function addString(s:Null<String>):FastHash
 	{
+		if (s == null) return addNull();
+
 		var bytes = Bytes.ofString(s);
 		this = __addBytes(bytes, 0, bytes.length);
 		return this;
 	}
 
-	// Operator overloading: += for integers
-
 	@:op(A += B)
 	public inline function addInt(v:Int):FastHash
 	{
 		var n = v;
-		this = addByte(n & 0xFF);
+		this = __addByte(n & 0xFF);
 		n >>= 8;
-		this = addByte(n & 0xFF);
+		this = __addByte(n & 0xFF);
 		n >>= 8;
-		this = addByte(n & 0xFF);
+		this = __addByte(n & 0xFF);
 		n >>= 8;
-		this = addByte(n & 0xFF);
+		this = __addByte(n & 0xFF);
 		return this;
 	}
-
-	// Operator overloading: += for floats
 
 	@:op(A += B)
 	public inline function addFloat(v:Float):FastHash
@@ -72,8 +77,16 @@ abstract FastHash(Int) from Int to Int
 	}
 
 	@:op(A += B)
-	public inline function addEnum(e:EnumValue):FastHash
+	public inline function addBool(v:Bool):FastHash
 	{
+		return __addByte(v ? 1 : 0);
+	}
+
+	@:op(A += B)
+	public inline function addEnum(e:Null<EnumValue>):FastHash
+	{
+		if (e == null) return addNull();
+
 		addInt(Type.enumIndex(e));
 		return this;
 	}
@@ -86,24 +99,32 @@ abstract FastHash(Int) from Int to Int
 	}
 
 	@:op(A += B)
-	public inline function addIntArray(other:Array<Int>):FastHash
+	public inline function addIntArray(other:Null<Array<Int>>):FastHash
 	{
+		if (other == null) return addNull();
+
 		for (i in other)
 			addInt(i);
+
 		return this;
 	}
 
 	@:op(A += B)
-	public inline function addFloatArray(other:Array<Float>):FastHash
+	public inline function addFloatArray(other:Null<Array<Float>>):FastHash
 	{
+		if (other == null) return addNull();
+
 		for (i in other)
 			addFloat(i);
+
 		return this;
 	}
 
 	@:op(A += B)
-	public inline function addMatrix(other:Matrix):FastHash
+	public inline function addMatrix(other:Null<Matrix>):FastHash
 	{
+		if (other == null) return addNull();
+
 		addFloat(other.a);
 		addFloat(other.b);
 		addFloat(other.c);
@@ -114,8 +135,10 @@ abstract FastHash(Int) from Int to Int
 	}
 
 	@:op(A += B)
-	public inline function addRectangle(other:Rectangle):FastHash
+	public inline function addRectangle(other:Null<Rectangle>):FastHash
 	{
+		if (other == null) return addNull();
+
 		addFloat(other.x);
 		addFloat(other.y);
 		addFloat(other.width);
@@ -124,16 +147,20 @@ abstract FastHash(Int) from Int to Int
 	}
 
 	@:op(A += B)
-	public inline function addPoint(other:Point):FastHash
+	public inline function addPoint(other:Null<Point>):FastHash
 	{
+		if (other == null) return addNull();
+
 		addFloat(other.x);
 		addFloat(other.y);
 		return this;
 	}
 
 	@:op(A += B)
-	public inline function addColorTransform(other:ColorTransform):FastHash
+	public inline function addColorTransform(other:Null<ColorTransform>):FastHash
 	{
+		if (other == null) return addNull();
+
 		addFloat(other.redMultiplier);
 		addFloat(other.greenMultiplier);
 		addFloat(other.blueMultiplier);
@@ -145,12 +172,13 @@ abstract FastHash(Int) from Int to Int
 		return this;
 	}
 
-	// Internal method for adding bytes
 	private inline function __addBytes(bytes:Bytes, offset:Int, length:Int):FastHash
 	{
 		var end = offset + length;
+
 		for (i in offset...end)
-			addByte(bytes.get(i));
+			__addByte(bytes.get(i));
+
 		return this;
 	}
 

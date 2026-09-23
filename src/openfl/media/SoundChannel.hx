@@ -415,8 +415,7 @@ import lime.utils.Int16Array;
 					else
 					{
 						__sampleDataEvent.getSamples(__outputBuffer);
-						alAudioContext.bufferData(__emptyBuffers[a], AL.FORMAT_STEREO16, __bufferView, __sampleDataEvent.getBufferSize() * 4,
-							44100);
+						alAudioContext.bufferData(__emptyBuffers[a], AL.FORMAT_STEREO16, __bufferView, __sampleDataEvent.getBufferSize() * 4, 44100);
 						alAudioContext.sourceQueueBuffer(__alSource, __emptyBuffers[a]);
 					}
 				}

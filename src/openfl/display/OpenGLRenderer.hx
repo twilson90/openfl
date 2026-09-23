@@ -24,6 +24,7 @@ import openfl.geom.Rectangle;
 import openfl.utils.ObjectPool;
 import openfl.utils._internal.Float32Array;
 import openfl.utils._internal.IndexArray;
+import openfl.utils.ByteArray;
 #if lime
 import lime.graphics.WebGLRenderContext;
 import lime.graphics.opengl.ext.KHR_debug;
@@ -87,8 +88,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@SuppressWarnings("checkstyle:Dynamic")
 	public var gl:#if lime WebGLRenderContext #else Dynamic #end;
 
-	@:noCompletion private static var __staticDefaultDisplayShader:DisplayObjectShader.DefaultDisplayObjectShader;
-	@:noCompletion private static var __staticDefaultGraphicsShader:GraphicsShader.DefaultGraphicsShader;
+	@:noCompletion private static var __staticDefaultDisplayShader:DefaultDisplayObjectShader;
+	@:noCompletion private static var __staticDefaultGraphicsShader:DefaultGraphicsShader;
 	@:noCompletion private static var __staticMaskShader:Context3DMaskShader;
 
 	@:noCompletion private var __context3D:Context3D;
@@ -97,8 +98,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private var __currentGraphicsShader:Shader;
 	@:noCompletion private var __currentShader:Shader;
 	@:noCompletion private var __currentShaderBuffer:ShaderBuffer;
-	@:noCompletion private var __defaultDisplayShader:DisplayObjectShader.DefaultDisplayObjectShader;
-	@:noCompletion private var __defaultGraphicsShader:GraphicsShader.DefaultGraphicsShader;
+	@:noCompletion private var __defaultDisplayShader:DefaultDisplayObjectShader;
+	@:noCompletion private var __defaultGraphicsShader:DefaultGraphicsShader;
 	@:noCompletion private var __defaultRenderTarget:BitmapData;
 	@:noCompletion private var __defaultShader:Shader;
 	@:noCompletion private var __displayHeight:Int;
@@ -127,8 +128,14 @@ class OpenGLRenderer extends DisplayObjectRenderer
 	@:noCompletion private var __glDrawCallsBack:Map<IBitmapDrawable, Int>;
 	#end
 
-	private static var __wireframeKeyIntMap:Map<Int, Bool> = new Map<Int, Bool>();
-	private static var __wireframeKeyStringMap:Map<String, Bool> = new Map<String, Bool>();
+	@:noCompletion private static var __wireframeKeyIntMap:Map<Int, Bool> = new Map<Int, Bool>();
+	@:noCompletion private static var __wireframeKeyStringMap:Map<String, Bool> = new Map<String, Bool>();
+
+	@:noCompletion private static var __cachedBitmapAntialiasing:Int = #if (openfl_gl_cached_bitmap_antialiasing
+		&& !macro) Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_cached_bitmap_antialiasing")) #else 0 #end;
+	@:noCompletion private static var __graphicsCacheLimit:Int = #if (openfl_gl_graphics_cache_limit && !macro) Std.parseInt(haxe.macro.Compiler.getDefine("openfl_gl_graphics_cache_limit")) #else 2048 #end;
+	@:noCompletion private static var __graphicsCurveTolerance:Float = #if (openfl_gl_graphics_curve_tolerance && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_graphics_curve_tolerance")) #else 0.1 #end;
+	@:noCompletion private static var __hairlineThickness:Float = #if (openfl_gl_hairline_thickness && !macro) Std.parseFloat(haxe.macro.Compiler.getDefine("openfl_gl_hairline_thickness")) #else 1.0 #end;
 
 	// @:noCompletion private var __filterManager:FilterManager;
 
@@ -190,8 +197,8 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		__stencilReference = 0;
 		__tempRect = new Rectangle();
 
-		if (__staticDefaultDisplayShader == null) __staticDefaultDisplayShader = new DisplayObjectShader.DefaultDisplayObjectShader();
-		if (__staticDefaultGraphicsShader == null) __staticDefaultGraphicsShader = new GraphicsShader.DefaultGraphicsShader();
+		if (__staticDefaultDisplayShader == null) __staticDefaultDisplayShader = new DefaultDisplayObjectShader();
+		if (__staticDefaultGraphicsShader == null) __staticDefaultGraphicsShader = new DefaultGraphicsShader();
 		if (__staticMaskShader == null) __staticMaskShader = new Context3DMaskShader();
 
 		__defaultDisplayShader = __staticDefaultDisplayShader;
@@ -948,11 +955,9 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		if (object == null) return;
 
 		#if !openfl_disable_gl_render_culling
-		if (__stage != null)
+		if (__stage != null && object.__customRenderEvent == null)
 		{
-			__worldBounds.setEmpty();
-			object.__getBounds(__worldBounds, object.__worldTransform);
-			if (!__stage.__bounds.intersects(__worldBounds))
+			if (!__stage.__bounds.intersects(object.__getWorldAABB()))
 			{
 				return;
 			}
@@ -1245,7 +1250,6 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		var wireframeIndex = 0;
 		var map:IMap<Dynamic, Bool> = useIntKeys ? __wireframeKeyIntMap : __wireframeKeyStringMap;
 		var i0:Int, i1:Int, i2:Int, key1:Dynamic, key2:Dynamic, key3:Dynamic;
-		var i:Int = 0;
 
 		for (i in 0...numTris)
 		{
@@ -1289,6 +1293,28 @@ class OpenGLRenderer extends DisplayObjectRenderer
 		var min = a < b ? a : b;
 		var max = a < b ? b : a;
 		return isInt ? (min << 16) | max : min + ":" + max;
+	}
+}
+
+private class DefaultDisplayObjectShader extends DisplayObjectShader
+{
+	@:glFragmentBody("
+		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
+	")
+	public function new(code:ByteArray = null)
+	{
+		super(code);
+	}
+}
+
+private class DefaultGraphicsShader extends GraphicsShader
+{
+	@:glFragmentBody("
+		gl_FragColor = openfl_applyColorModifier(openfl_baseColor());
+	")
+	public function new(code:ByteArray = null)
+	{
+		super(code);
 	}
 }
 #else

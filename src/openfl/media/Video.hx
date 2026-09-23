@@ -288,7 +288,7 @@ class Video extends DisplayObject
 	{
 		var bounds = Rectangle.__pool.get();
 		bounds.setTo(0, 0, __width, __height);
-		bounds.__transform(bounds, matrix);
+		if (matrix != null) bounds.__transform(bounds, matrix);
 
 		rect.__expand(bounds.x, bounds.y, bounds.width, bounds.height);
 
